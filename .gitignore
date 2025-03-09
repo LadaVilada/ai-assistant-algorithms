@@ -1,0 +1,23 @@
+# Ignore environmental files
+.env
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+.idea/
+*.egg-info/
+dist/
+
+# Ignore VS Code settings
+.vscode/
+
+# Ignore log files
+# Ignore all log files in any logs folder
+**/logs/
+**/logs/*
+*.log
+
+# Explicitly ignore the logs folder in your project
+src/ai-assistant/core/logs/
+src/ai-assistant/core/logs/*
