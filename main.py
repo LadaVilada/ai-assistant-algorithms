@@ -9,11 +9,12 @@ import sys
 import time
 from dotenv import load_dotenv
 
-from document_loader import DocumentLoader
-from embeddings import EmbeddingManager
-from llm_service import LLMService
-from rag_chain import RAGChain
-from vectore_store import VectorStore
+from src.ai_assistant.core import DocumentLoader
+from src.ai_assistant.core import EmbeddingManager
+from src.ai_assistant.core import LLMService
+from src.ai_assistant.core import RAGChain
+from src.ai_assistant.core import VectorStore
+from src.ai_assistant.utils.document_tracker import DocumentTracker
 
 
 def setup_logging(log_level=logging.INFO):
@@ -22,20 +23,25 @@ def setup_logging(log_level=logging.INFO):
    Args:
        log_level: Logging level (default: INFO)
    """
+    LOG_DIR = "src/ai_assistant/core/logs"
     # Create logs directory if it doesn't exist
-    os.makedirs("logs", exist_ok=True)
+    os.makedirs(LOG_DIR, exist_ok=True)
 
     # Generate timestamp for log file
     timestamp = time.strftime("%Y%m%d-%H%M%S")
+    log_file_path = os.path.join(LOG_DIR, f"app_{timestamp}.log")
 
     logging.basicConfig(
         level=log_level,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         handlers=[
             logging.StreamHandler(),
-            logging.FileHandler(f'logs/app_{timestamp}.log')
+            logging.FileHandler(log_file_path)
+            # logging.FileHandler(f'logs/app_{timestamp}.log')
         ]
     )
+
+    logging.info(f"Logging initialized. Logs will be saved to: {log_file_path}")
 
     # Set lower log level for some noisy libraries
     logging.getLogger("openai").setLevel(logging.WARNING)
@@ -46,22 +52,28 @@ def setup_logging(log_level=logging.INFO):
 
 
 def ingest_documents(rag_chain, directory_path):
-    """Ingest all PDF documents in the specified directory.
+    """Ingest all PDF documents in the specified directory,
+       skipping previously ingested ones.
     
     Args:
         rag_chain: RAG chain instance
         directory_path: Path to directory containing PDFs
     """
 
+
     logger = logging.getLogger(__name__)
     path = Path(directory_path)
 
     if not path.exists():
-        logging.error(f"Directory not found: {directory_path}")
+        logger.error(f"Directory not found: {directory_path}")
         return
 
-    # Count successful and failed ingestions
+    # Initialize document tracker
+    tracker = DocumentTracker()
+
+    # Count successful and failed ingestion's
     success_count = 0
+    skipped_count = 0
     failed_count = 0
 
     # List of supported file extensions
@@ -69,13 +81,20 @@ def ingest_documents(rag_chain, directory_path):
 
     # Find all files with supported extensions
     for ext in supported_extensions:
-        for file_path in path.glob(f"*{ext}"):
+        for file_path in path.glob(f"**/*{ext}"):  # Use ** for recursive search
             try:
-                logger.info(f"Ingesting {file_path}...")
+                # Check if document already ingested and unchanged
+                if tracker.is_document_ingested(str(file_path)):
+                    logger.info(f"Skipping already ingested document: {file_path}")
+                    skipped_count += 1
+                    continue
 
+                logger.info(f"Ingesting {file_path}...")
                 success = rag_chain.ingest_document(str(file_path))
 
                 if success:
+                    # Mark as successfully ingested
+                    tracker.mark_document_ingested(str(file_path))
                     logger.info(f"Successfully ingested: {file_path}")
                     success_count += 1
                 else:
@@ -87,9 +106,8 @@ def ingest_documents(rag_chain, directory_path):
                 failed_count += 1
 
     # Log ingestion summary
-    logger.info(f"Ingestion complete. Success: {success_count}, Failed: {failed_count}")
-    print(f"Ingestion complete. Success: {success_count}, Failed: {failed_count}")
-
+    logger.info(f"Ingestion complete. Success: {success_count}, Skipped: {skipped_count}, Failed: {failed_count}")
+    print(f"Ingestion complete. Success: {success_count}, Skipped: {skipped_count}, Failed: {failed_count}")
 
 
 def process_query(rag_chain, llm_service, query, top_k=3):
@@ -102,7 +120,7 @@ def process_query(rag_chain, llm_service, query, top_k=3):
         top_k: Number of documents to retrieve
         
     Returns:
-        Response to the query
+        Dictionary with response and source information
     """
 
     logger = logging.getLogger(__name__)
@@ -114,7 +132,8 @@ def process_query(rag_chain, llm_service, query, top_k=3):
 
         # Calculate processing time
         processing_time = time.time() - start_time
-        # Prepare result object
+
+        # Prepare result object with more detailed source information
         result = {
             "query": query,
             "response": response,
@@ -122,6 +141,8 @@ def process_query(rag_chain, llm_service, query, top_k=3):
                 {
                     "title": doc.get("metadata", {}).get("source", "Unknown"),
                     "score": doc.get("score", 0),
+                    "metadata": doc.get("metadata", {}),  # Include full metadata
+                    "text": doc.get("text", "")  # Include the text content
                 }
                 for doc in retrieved_docs
             ],
@@ -139,9 +160,9 @@ def process_query(rag_chain, llm_service, query, top_k=3):
             "response": "I encountered an error while processing your query. Please try again.",
             "sources": [],
             "processing_time_seconds": time.time() - start_time,
-            "error": str(e)
+            "error": str(e),
+            "retrieved_count": 0
         }
-
 
 
 def interactive_mode(rag_chain, llm_service):
@@ -153,11 +174,14 @@ def interactive_mode(rag_chain, llm_service):
     """
     logger = logging.getLogger(__name__)
 
-    print("\n" + "="*50)
+    print("\n" + "=" * 50)
     print("Algorithm Learning Assistant")
     print("Enter 'exit' or 'quit' to end the session")
-    print("\n" + "="*50)
-    
+    print("\n" + "=" * 50)
+
+    # Keep track of the last result for displaying sources
+    last_result = None
+
     while True:
         try:
             # Get user query
@@ -169,10 +193,45 @@ def interactive_mode(rag_chain, llm_service):
                 print("\nExiting. Goodbye!")
                 break
 
+            # Check for sources command
+            if query.lower() == 'sources' and last_result:
+                print("\nSources for the last answer:")
+                if last_result['sources']:
+                    for i, source in enumerate(last_result['sources']):
+                        file_path = source.get("title", "Unknown")
+                        # Extract just the filename from the path
+                        file_name = os.path.basename(file_path) if isinstance(file_path, str) else "Unknown"
+
+                        page = source.get("metadata", {}).get("page", "N/A")
+                        score = source.get("score", 0)
+
+                        # Extract and format text preview
+                        text = source.get("text", "")
+                        preview = text[:100] + "..." if len(text) > 100 else text
+
+                        # Clean up the preview (remove excess whitespace)
+                        preview = " ".join(preview.split())
+
+                        # Print source information with text preview
+                        print(f"{i+1}. {file_name} (Page: {page}, Relevance: {score:.4f})")
+                        print(f"   Preview: \"{preview}\"")
+                        print()  # Empty line for better readability
+                else:
+                    print("No sources were retrieved for the last answer.")
+                continue
+            elif query.lower() == 'sources' and not last_result:
+                print("\nNo previous query to show sources for.")
+                continue
+
+            # Skip empty queries
+            if not query:
+                continue
+
             print("\nProcessing...\n")
 
             # Process query
             result = process_query(rag_chain, llm_service, query)
+            last_result = result  # Store the result for potential source display
 
             # Print response
             print(f"Answer: {result['response']}")
@@ -193,18 +252,23 @@ def main():
     """Main entry point."""
     # Set up logging
     setup_logging()
-    
+
     # Load environment variables
     load_dotenv()
-    
+
     # Parse command line arguments
     parser = argparse.ArgumentParser(
         description="Algorithm Learning Assistant"
     )
     parser.add_argument(
         '--ingest',
-        help='Path to directory containing PDFs to ingest'
+        help='Path to directory containing documents to ingest'
     )
+
+    parser.add_argument(
+        "--clean-index", action="store_true",
+        help="Clean the vector store completely")
+
 
     parser.add_argument(
         '--log-level',
@@ -238,9 +302,16 @@ def main():
             vector_store=vector_store
         )
 
+        # Handle index cleaning if requested
+        if args.clean_index:
+            vector_store.clear_index()
+            sys.exit(0)
+
         # Ingest documents if specified
         if args.ingest:
             ingest_documents(rag_chain, args.ingest)
+
+        # ingest_documents(rag_chain, os.getenv("STORAGE_PATH", ""))
 
         # Run in interactive mode
         interactive_mode(rag_chain, llm_service)

@@ -19,8 +19,11 @@ dist/
 *.log
 
 # Explicitly ignore the logs folder in your project
-src/ai-assistant/core/logs/
-src/ai-assistant/core/logs/*
+src/ai_assistant/core/logs/
+src/ai_assistant/core/logs/*
+
+# Ignore data files
+ingested_documents.json
 
 # Ignore macOS system files
 .DS_Store
