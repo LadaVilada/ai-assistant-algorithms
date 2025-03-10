@@ -5,7 +5,7 @@ from typing import Optional
 
 from openai import OpenAI
 
-from config import config
+from .config import config
 
 logger = logging.getLogger(__name__)
 
