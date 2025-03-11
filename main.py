@@ -2,6 +2,7 @@
 
 import argparse
 import logging
+# import logging
 import os
 from pathlib import Path
 
@@ -15,40 +16,7 @@ from src.ai_assistant.core import LLMService
 from src.ai_assistant.core import RAGService
 from src.ai_assistant.core import VectorStore
 from src.ai_assistant.core.utils.document_tracker import DocumentTracker
-
-
-def setup_logging(log_level=logging.INFO):
-    """Set up logging configuration.
-
-   Args:
-       log_level: Logging level (default: INFO)
-   """
-    LOG_DIR = "src/ai_assistant/core/logs"
-    # Create logs directory if it doesn't exist
-    os.makedirs(LOG_DIR, exist_ok=True)
-
-    # Generate timestamp for log file
-    timestamp = time.strftime("%Y%m%d-%H%M%S")
-    log_file_path = os.path.join(LOG_DIR, f"app_{timestamp}.log")
-
-    logging.basicConfig(
-        level=log_level,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.StreamHandler(),
-            logging.FileHandler(log_file_path)
-            # logging.FileHandler(f'logs/app_{timestamp}.log')
-        ]
-    )
-
-    logging.info(f"Logging initialized. Logs will be saved to: {log_file_path}")
-
-    # Set lower log level for some noisy libraries
-    logging.getLogger("openai").setLevel(logging.WARNING)
-    logging.getLogger("pinecone").setLevel(logging.WARNING)
-
-    logger = logging.getLogger(__name__)
-    logger.info("Logging initialized")
+from src.ai_assistant.core.utils.logging import LoggingConfig
 
 
 def ingest_documents(rag_chain, directory_path):
@@ -250,8 +218,6 @@ def interactive_mode(rag_chain, llm_service):
 
 def main():
     """Main entry point."""
-    # Set up logging
-    setup_logging()
 
     # Load environment variables
     load_dotenv()
@@ -278,10 +244,14 @@ def main():
     )
 
     args = parser.parse_args()
-
     # Set up logging
     log_level = getattr(logging, args.log_level)
-    setup_logging(log_level)
+
+    LoggingConfig.setup_logging(
+        log_level=log_level,
+        # log_level=logging.INFO,
+        app_name="ai_assistant_cli"
+    )
 
     logger = logging.getLogger(__name__)
     logger.info("Starting Algorithm Learning Assistant")

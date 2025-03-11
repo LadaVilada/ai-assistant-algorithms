@@ -9,6 +9,32 @@ from pydantic import BaseModel, Field
 # Load environment variables
 load_dotenv()
 
+# src/ai_assistant/core/utils/config.py
+import os
+from typing import Dict, Any
+
+# class ConfigManager:
+#     @staticmethod
+#     def get_config(service: str) -> Dict[str, Any]:
+#         """
+#         Centralized configuration management
+#         Supports environment-based configuration
+#         """
+#         configs = {
+#             'telegram': {
+#                 'token': os.getenv('TELEGRAM_BOT_TOKEN'),
+#                 # Other Telegram-specific configs
+#             },
+#             'algorithms': {
+#                 'api_key': os.getenv('ALGORITHMS_BOT_API_KEY'),
+#                 # Other Algorithms bot configs
+#             }
+#         }
+#         return configs.get(service, {})
+
+
+
+
 class AgentConfig(BaseModel):
     """Configuration for the Algorithm Learning Agent."""
     

@@ -2,11 +2,10 @@
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 
-from src.ai_assistant.core.document_loader import DocumentLoader
-from src.ai_assistant.core.vector_store import VectorStore
+from ai_assistant.core.document_loader import DocumentLoader
+from ai_assistant.core.vector_store import VectorStore
 from .embedding_service import EmbeddingService
-
-logger = logging.getLogger(__name__)
+from ..utils.logging import LoggingConfig
 
 
 class RAGService:
@@ -25,6 +24,13 @@ class RAGService:
             embedding_generator: Embedding generator instance
             vector_store: Vector store instance
         """
+
+        # Get a logger for this service
+        self.logger = LoggingConfig.get_logger(__name__)
+
+        # Log service initialization
+        self.logger.info("RAG Service initialized")
+
         # Use dynamic imports to avoid circular dependencies
         if loader is None:
             # from document_loader import DocumentLoader
@@ -104,16 +110,16 @@ class RAGService:
     def ingest_document(self, file_path: str) -> bool:
         """Ingest a document into the RAG system with batch processing."""
         try:
-            logger.info(f"Starting document ingestion: {file_path}")
+            self.logger.info(f"Starting document ingestion: {file_path}")
 
             # 1. Load and chunk the document
             chunks = self.loader.load_document(file_path)
             if not chunks:
-                logger.warning(f"No chunks extracted from document: {file_path}")
+                self.logger.warning(f"No chunks extracted from document: {file_path}")
                 return False
 
             total_chunks = len(chunks)
-            logger.info(f"Processing {total_chunks} chunks from {file_path}")
+            self.logger.info(f"Processing {total_chunks} chunks from {file_path}")
 
             # 2. Process in batches
             batch_size = 10  # Process 10 chunks at a time
@@ -149,17 +155,17 @@ class RAGService:
                     self.vector_store.store_documents(batch_chunks, batch_embeddings)
 
                     successful_chunks += len(batch_chunks)
-                    logger.info(f"Progress: {successful_chunks}/{total_chunks} chunks processed")
+                    self.logger.info(f"Progress: {successful_chunks}/{total_chunks} chunks processed")
 
                 except Exception as batch_error:
-                    logger.error(f"Error processing batch {i//batch_size}: {batch_error}")
+                    self.logger.error(f"Error processing batch {i//batch_size}: {batch_error}")
                     continue
 
-            logger.info(f"Document ingestion complete: {file_path} - Processed {successful_chunks}/{total_chunks} chunks")
+            self.logger.info(f"Document ingestion complete: {file_path} - Processed {successful_chunks}/{total_chunks} chunks")
             return successful_chunks > 0
 
         except Exception as e:
-            logger.error(f"Error ingesting document {file_path}: {e}")
+            self.logger.error(f"Error ingesting document {file_path}: {e}")
             return False
 
     def retrieve(self, query: str, top_k: int = 3,

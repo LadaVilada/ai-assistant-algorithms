@@ -1,143 +1,118 @@
+# Import your existing RAG components
 import logging
-import os
 
+from ai_assistant.core import LLMService
+from ai_assistant.core import RAGService
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-# Import your existing RAG components
-from ai_assistant.core import LLMService
-from ai_assistant.core import RAGChain
+from ai_assistant.algorithms.bot import AlgorithmsBot
+from ai_assistant.core.utils.logging import LoggingConfig
 
-from dotenv import load_dotenv
 
-# Configure logging
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-logger = logging.getLogger(__name__)
+class TelegramAlgorithmsBot:
+    def __init__(self, token: str):
 
-# Initialize your RAG components
-rag_chain = RAGChain()
-llm_service = LLMService()
+        # Setup logging for the Telegram bot
+        LoggingConfig.setup_logging(
+            log_level=logging.INFO,
+            app_name='telegram_algorithms_bot'
+        )
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Send greeting message when /start command is issued."""
-    await update.message.reply_text(
-        "👋 Hi! I'm your algorithm assistant. Ask me a question, and I'll help you find the answer."
-    )
+        # Get a logger specific to this class
+        self.logger = LoggingConfig.get_logger(__name__)
 
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Send help message when /help command is issued."""
-    await update.message.reply_text(
-        "You can ask me questions about algorithms and data structures. "
-        "To get information about sources, use the /sources command after receiving an answer."
-    )
+        self.token = token
+        # Initialize your RAG components
+        rag_service = RAGService()
+        llm_service = LLMService()
+        self.algorithms_bot = AlgorithmsBot(rag_service, llm_service)
+        self.application = None
+        # Store the last result for each user
+        self.last_results = {}
 
-# Store the last result for each user
-last_results = {}
+    async def start_command(self, update, context):
+        """Handle /start command"""
+        await (update.message
+               .reply_text("Hi! I'm your algorithm assistant. "
+                           "Ask me a question, and I'll help you find the answer."))
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Process user messages and respond using RAG."""
-    user_id = update.effective_user.id
-    message_text = update.message.text
+    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Send help message when /help command is issued."""
+        await update.message.reply_text(
+            "You can ask me questions about algorithms and data structures. "
+            "To get information about sources, use the /sources command after receiving an answer."
+        )
 
-    # Handle 'sources' request
-    if message_text.lower() == 'sources' or message_text.lower() == '/sources':
-        if user_id in last_results:
-            sources_text = format_sources(last_results[user_id].get('sources', []))
-            await update.message.reply_text(sources_text)
-        else:
-            await update.message.reply_text("I don't have a previous answer to show sources for.")
-        return
+    async def handle_message(self, update, context):
+        """Process user messages and respond using RAG."""
+        user_id = update.effective_user.id
+        query = update.message.text
 
-    # Process regular query
-    await update.message.reply_text("🔍 Searching for an answer...")
+        # Handle 'sources' request
+        if query.lower() == 'sources' or query.lower() == '/sources':
+            if user_id in self.last_results:
+                sources_text = self.format_sources(self.last_results[user_id].get('sources', []))
+                await update.message.reply_text(sources_text)
+            else:
+                await update.message.reply_text("I don't have a previous answer to show sources for.")
+            return
 
-    try:
+        # Process regular query
+        await update.message.reply_text("🔍 Searching for an answer...")
 
         # Debug: Print the RAG chain query method signature
-        logger.info(f"RAG Chain query method signature: {rag_chain.query}")
+        self.logger.info(f"RAG Chain query method signature: {query}")
 
-        # Call your existing RAG pipeline
-        result = rag_chain.query(message_text, llm_service, 3)
-        logger.info(f"Processed message: {message_text}")
-        # Debug: Log the actual result structure
-        logger.info(f"RAG Query Result: {result}")
+        # Handle incoming messages
+        try:
+            # Call your existing RAG pipeline
+            result = self.algorithms_bot.process_query(query)
 
+            self.logger.info(f"Processed message: {query}")
+            # Debug: Log the actual result structure
+            self.logger.info(f"RAG Query Result: {result}")
 
-        # Store result for sources request
-        # last_results[user_id] = result
-        # logger.info(f"Stored result for user: {user_id}")
-
-        # Ensure the result has the expected structure
-        if isinstance(result, dict):
-            # Store result for sources request
-            last_results[user_id] = result
-
-            # Send the response
-            await update.message.reply_text(
-                f"{result.get('response', 'No response generated')}\n\n"
-                f"[Found {result.get('retrieved_count', 0)} sources. Type 'sources' to see details]"
-            )
-        elif isinstance(result, tuple):
-            # If result is a tuple, handle it accordingly
-            response, sources = result
-            last_results[user_id] = {
-                'response': response,
-                'sources': sources,
-                'retrieved_count': len(sources)
-            }
-
-            # Send the response
-            await update.message.reply_text(
+            # Format and send response
+            response_text = (
                 f"{result['response']}\n\n"
-                f"[Found {result['retrieved_count']} sources. Type 'sources' to see details]"
+                f"[Sources found: {len(result.get('sources', []))}]"
             )
-        else:
-            # Unexpected result type
-            logger.error(f"Unexpected result type: {type(result)}")
-            await update.message.reply_text(
-                "Sorry, I couldn't process the query properly. Please try again."
-            )
+            await update.message.reply_text(response_text)
 
-    except Exception as e:
-        logger.error(f"Error processing message: {e}")
+        except Exception as e:
+            self.logger.error(f"Error processing message: {e}")
         await update.message.reply_text(
             "Sorry, an error occurred while processing your request. Please try again."
         )
 
-def format_sources(sources):
-    """Format sources for Telegram message."""
-    if not sources:
-        return "No available sources."
+    def setup_handlers(self):
+        """Set up Telegram bot handlers"""
+        self.application = Application.builder().token(self.token).build()
 
-    result = "📚 Sources:\n\n"
-    for i, source in enumerate(sources):
-        doc_path = source.get("title", "Unknown")
-        doc_name = doc_path.split("/")[-1] if "/" in doc_path else doc_path
-        page = source.get("metadata", {}).get("page", "N/A")
-        score = source.get("score", 0)
+        self.application.add_handler(CommandHandler('start', self.start_command))
+        self.application.add_handler(CommandHandler('help', self.help_command))
+        self.application.add_handler(
+            MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message)
+        )
 
-        result += f"{i+1}. {doc_name} (Page: {page}, Relevance: {score:.2f})\n"
+    def format_sources(self, sources):
+        """Format sources for Telegram message."""
+        if not self:
+            return "No available sources."
 
-    return result
+        result = "📚 Sources:\n\n"
+        for i, source in enumerate(sources):
+            doc_path = source.get("title", "Unknown")
+            doc_name = doc_path.split("/")[-1] if "/" in doc_path else doc_path
+            page = source.get("metadata", {}).get("page", "N/A")
+            score = source.get("score", 0)
 
-def main() -> None:
-    """Start the bot."""
-    # Load environment variables
-    load_dotenv()
+            result += f"{i + 1}. {doc_name} (Page: {page}, Relevance: {score:.2f})\n"
 
-    # Create the Application instance
-    application = Application.builder().token(os.getenv("TELEGRAM_TOKEN")).build()
+        return result
 
-    # Add handlers
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    # Run the bot until the user presses Ctrl-C
-    application.run_polling(drop_pending_updates=True)
-
-if __name__ == "__main__":
-    main()
+    def run(self):
+        """Run the Telegram bot"""
+        self.setup_handlers()
+        self.application.run_polling(drop_pending_updates=True)
