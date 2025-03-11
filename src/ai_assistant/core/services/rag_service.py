@@ -1,22 +1,21 @@
 """Retrieval-Augmented Generation chain for algorithm learning."""
-import hashlib
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 
-from .document_loader import DocumentLoader
-from .embeddings import EmbeddingManager
-from .vectore_store import VectorStore
+from src.ai_assistant.core.document_loader import DocumentLoader
+from src.ai_assistant.core.vector_store import VectorStore
+from .embedding_service import EmbeddingService
 
 logger = logging.getLogger(__name__)
 
 
-class RAGChain:
+class RAGService:
     """Retrieval-Augmented Generation chain for algorithm learning."""
 
     def __init__(
         self,
         loader: Optional[DocumentLoader] = None,
-        embedding_generator: Optional[EmbeddingManager] = None,
+        embedding_generator: Optional[EmbeddingService] = None,
         vector_store: Optional[VectorStore] = None
     ):
         """Initialize the RAG chain.
@@ -28,19 +27,19 @@ class RAGChain:
         """
         # Use dynamic imports to avoid circular dependencies
         if loader is None:
-            from document_loader import DocumentLoader
+            # from document_loader import DocumentLoader
             self.loader = DocumentLoader()
         else:
             self.loader = loader
 
         if embedding_generator is None:
-            from embeddings import EmbeddingManager
-            self.embedding_generator = EmbeddingManager()
+            # from embeddings import EmbeddingManager
+            self.embedding_generator = EmbeddingService()
         else:
             self.embedding_generator = embedding_generator
 
         if vector_store is None:
-            from vectore_store import VectorStore
+            # from vector_store import VectorStore
             self.vector_store = VectorStore()
         else:
             self.vector_store = vector_store

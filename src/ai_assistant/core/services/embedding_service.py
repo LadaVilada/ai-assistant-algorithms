@@ -11,7 +11,7 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-class EmbeddingManager:
+class EmbeddingService:
     """
     Advanced embedding and vector store management
     Responsibility : Generate embeddings for prompts.

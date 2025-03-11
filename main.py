@@ -10,11 +10,11 @@ import time
 from dotenv import load_dotenv
 
 from src.ai_assistant.core import DocumentLoader
-from src.ai_assistant.core import EmbeddingManager
+from src.ai_assistant.core import EmbeddingService
 from src.ai_assistant.core import LLMService
-from src.ai_assistant.core import RAGChain
+from src.ai_assistant.core import RAGService
 from src.ai_assistant.core import VectorStore
-from src.ai_assistant.utils.document_tracker import DocumentTracker
+from src.ai_assistant.core.utils.document_tracker import DocumentTracker
 
 
 def setup_logging(log_level=logging.INFO):
@@ -290,13 +290,13 @@ def main():
         # Initialize components
         logger.info("Initializing components...")
 
-        embedding_generator = EmbeddingManager()
+        embedding_generator = EmbeddingService()
         vector_store = VectorStore()
         loader = DocumentLoader()
         llm_service = LLMService()
 
         # Initialize RAG chain
-        rag_chain = RAGChain(
+        rag_chain = RAGService(
             loader=loader,
             embedding_generator=embedding_generator,
             vector_store=vector_store
