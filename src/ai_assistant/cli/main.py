@@ -9,10 +9,12 @@ from typing import Optional
 from ai_assistant.algorithms.bot import AlgorithmsBot
 # Import core services and bots
 
-from ai_assistant.core import RAGService, LLMService, EmbeddingService, VectorStore, DocumentLoader
+from ai_assistant.core import RAGService, LLMService, EmbeddingService
 from ai_assistant.core.utils.document_tracker import DocumentTracker
 from ai_assistant.core.utils.logging import LoggingConfig
 from ai_assistant.telegram.algorithms_bot import TelegramAlgorithmsBot
+
+from ai_assistant.core import DocumentService, VectorStore
 
 
 def ingest_documents(rag_service, directory_path):
@@ -92,7 +94,7 @@ class CLIApplication:
         self.embedding_service = EmbeddingService()
         self.vector_store = VectorStore()
         # self.rag_service = RAGService()
-        self.document_loader = DocumentLoader()
+        self.document_loader = DocumentService()
         self.llm_service = LLMService()
 
         # Initialize RAG service

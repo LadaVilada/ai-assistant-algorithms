@@ -3,7 +3,6 @@ import sys
 import logging
 
 from ai_assistant.algorithms.bot import AlgorithmsBot
-from ai_assistant.core import RAGService, LLMService
 from ai_assistant.core.utils.logging import LoggingConfig
 
 # Add project root to Python path
@@ -26,12 +25,8 @@ def main():
         # Log the start of the application
         logger.info("Starting Algorithms Bot CLI")
 
-        # Initialize services and bot
-        rag_service = RAGService()
-        llm_service = LLMService()
-
         # Create bot instance
-        bot = AlgorithmsBot(rag_service, llm_service)
+        bot = AlgorithmsBot()
 
         # Run tests or interactive mode
         test_results = bot.run_tests()

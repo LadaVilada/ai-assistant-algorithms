@@ -2,9 +2,8 @@
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 
-from ai_assistant.core.document_loader import DocumentLoader
-from ai_assistant.core.vector_store import VectorStore
 from .embedding_service import EmbeddingService
+from .. import DocumentService, VectorStore
 from ..utils.logging import LoggingConfig
 
 
@@ -13,7 +12,7 @@ class RAGService:
 
     def __init__(
         self,
-        loader: Optional[DocumentLoader] = None,
+        loader: Optional[DocumentService] = None,
         embedding_generator: Optional[EmbeddingService] = None,
         vector_store: Optional[VectorStore] = None
     ):
@@ -33,19 +32,16 @@ class RAGService:
 
         # Use dynamic imports to avoid circular dependencies
         if loader is None:
-            # from document_loader import DocumentLoader
-            self.loader = DocumentLoader()
+            self.loader = DocumentService()
         else:
             self.loader = loader
 
         if embedding_generator is None:
-            # from embeddings import EmbeddingManager
             self.embedding_generator = EmbeddingService()
         else:
             self.embedding_generator = embedding_generator
 
         if vector_store is None:
-            # from vector_store import VectorStore
             self.vector_store = VectorStore()
         else:
             self.vector_store = vector_store
@@ -193,7 +189,7 @@ class RAGService:
 
         print(type(self.vector_store))
         index_stats = self.vector_store.index.describe_index_stats()
-        print(index_stats)  # ✅ See what the response contains
+        print(index_stats)  # See what the response contains
 
         # Extract the number of stored vectors (documents)
         num_vectors = index_stats["total_vector_count"]

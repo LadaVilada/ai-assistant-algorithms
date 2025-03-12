@@ -1,0 +1,53 @@
+{
+  "function_configuration": {
+    "function_name": "telegram-ai-assistant",
+    "runtime": "python3.9",
+    "handler": "lambda_function.lambda_handler",
+    "role_name": "telegram-ai-assistant-lambda-role",
+    "region": "us-east-1"
+  },
+  "performance_settings": {
+    "timeout": 30,
+    "memory_size": 256,
+    "reserved_concurrency": 10
+  },
+  "environment_variables": {
+    "ENVIRONMENT": "production",
+    "LOG_LEVEL": "INFO",
+    "ENABLED_FEATURES": [
+      "telegram_bot",
+      "algorithms_assistant"
+    ]
+  },
+  "monitoring": {
+    "cloudwatch_logs": true,
+    "x_ray_tracing": false,
+    "log_retention_days": 30
+  },
+  "vpc_configuration": {
+    "subnet_ids": [],
+    "security_group_ids": []
+  },
+  "secrets": {
+    "telegram_bot_token": {
+      "source": "secrets_manager",
+      "secret_id": "TelegramBotToken"
+    },
+    "openai_api_key": {
+      "source": "secrets_manager",
+      "secret_id": "OpenAIAPIKey"
+    }
+  },
+  "deployment_targets": {
+    "environments": [
+      "development",
+      "staging",
+      "production"
+    ]
+  },
+  "tags": {
+    "Project": "AI Assistant",
+    "Component": "Telegram Bot",
+    "ManagedBy": "Automated Deployment Script"
+  }
+}

@@ -10,7 +10,7 @@ import sys
 import time
 from dotenv import load_dotenv
 
-from src.ai_assistant.core import DocumentLoader
+from src.ai_assistant.core import DocumentService
 from src.ai_assistant.core import EmbeddingService
 from src.ai_assistant.core import LLMService
 from src.ai_assistant.core import RAGService
@@ -262,7 +262,7 @@ def main():
 
         embedding_generator = EmbeddingService()
         vector_store = VectorStore()
-        loader = DocumentLoader()
+        loader = DocumentService()
         llm_service = LLMService()
 
         # Initialize RAG chain

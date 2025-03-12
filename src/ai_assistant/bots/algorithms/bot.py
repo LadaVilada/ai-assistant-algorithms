@@ -1,25 +1,20 @@
-import logging
 import time
-
-from ai_assistant.core.services.rag_service import RAGService
-from ai_assistant.core.services.llm_service import LLMService
-
 from ai_assistant.bots.base_bot import BaseBot
-from ai_assistant.core.utils.logging import LoggingConfig
 
-from ai_assistant.core import VectorStore, DocumentLoader
+from ai_assistant.core import DocumentService, VectorStore
 
 
 class AlgorithmsBot(BaseBot):
-    def __init__(self, rag_service: RAGService, llm_service: LLMService):
+
+    def __init__(self):
         # Get a logger with potentially different log level
-        self.logger = LoggingConfig.get_logger(
-            name=__name__,
-            level=logging.DEBUG
-        )
-        super().__init__(rag_service, llm_service)
+        # self.logger = LoggingConfig.get_logger(
+        #     name=__name__,
+        #     level=logging.DEBUG
+        # )
+        super().__init__()
         self.vector_store = VectorStore()
-        self.loader = DocumentLoader()
+        self.loader = DocumentService()
 
     def process_query(self, query: str):
         """

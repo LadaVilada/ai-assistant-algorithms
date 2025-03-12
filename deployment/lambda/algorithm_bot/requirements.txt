@@ -1,0 +1,13 @@
+ #Lambda specific dependencies
+ #Lambda specific dependencies
+
+ # Core dependencies
+ boto3
+ requests
+ python-dotenv
+
+ # AI Assistant dependencies
+ openai
+ pydantic
+ telebot
+ python-telegram-bot

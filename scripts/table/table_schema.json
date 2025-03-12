@@ -1,0 +1,12 @@
+{
+  "TableName": "TelegramChatHistory",
+  "KeySchema": [
+    { "AttributeName": "session_id", "KeyType": "HASH" },
+    { "AttributeName": "timestamp", "KeyType": "RANGE" }
+  ],
+  "AttributeDefinitions": [
+    { "AttributeName": "session_id", "AttributeType": "S" },
+    { "AttributeName": "timestamp", "AttributeType": "N" }
+  ],
+  "BillingMode": "PAY_PER_REQUEST"
+}

@@ -7,7 +7,7 @@ from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 
-class DocumentLoader:
+class DocumentService:
     """
     Advanced document loader with multiple file type support
     Responsibility : Load and preprocess documents.

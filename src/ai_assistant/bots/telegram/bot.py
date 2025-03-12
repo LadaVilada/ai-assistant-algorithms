@@ -1,35 +1,43 @@
 # Import your existing RAG components
-import logging
+from typing import Dict, Any
 
-from ai_assistant.core import LLMService
-from ai_assistant.core import RAGService
+from ai_assistant.algorithms.bot import AlgorithmsBot
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-from ai_assistant.algorithms.bot import AlgorithmsBot
-from ai_assistant.core.utils.logging import LoggingConfig
+from src.ai_assistant.bots.base.base_bot import BaseBot
 
 
-class TelegramAlgorithmsBot:
+class TelegramAlgorithmsBot(BaseBot):
+
     def __init__(self, token: str):
 
         # Setup logging for the Telegram bot
-        LoggingConfig.setup_logging(
-            log_level=logging.INFO,
-            app_name='telegram_algorithms_bot'
-        )
+        super().__init__()
+        # LoggingConfig.setup_logging(
+        #     log_level=logging.INFO,
+        #     app_name='telegram_algorithms_bot'
+        # )
 
         # Get a logger specific to this class
-        self.logger = LoggingConfig.get_logger(__name__)
+        # self.logger = LoggingConfig.get_logger(__name__)
 
         self.token = token
-        # Initialize your RAG components
-        rag_service = RAGService()
-        llm_service = LLMService()
-        self.algorithms_bot = AlgorithmsBot(rag_service, llm_service)
+
+        # Use AlgorithmsBot as the underlying query processor
+        self.algorithms_bot = AlgorithmsBot()
         self.application = None
         # Store the last result for each user
         self.last_results = {}
+
+
+    def process_query(self, query: str) -> Dict[str, Any]:
+        """
+            Process a Telegram message query
+
+            Delegates to AlgorithmsBot for processing
+        """
+        return self.algorithms_bot.process_query(query)
 
     async def start_command(self, update, context):
         """Handle /start command"""
@@ -44,9 +52,10 @@ class TelegramAlgorithmsBot:
             "To get information about sources, use the /sources command after receiving an answer."
         )
 
-    async def handle_message(self, update, context):
+    async def handle_message(self, update: Update, message: str):
         """Process user messages and respond using RAG."""
         user_id = update.effective_user.id
+        # TODO: check if query == message
         query = update.message.text
 
         # Handle 'sources' request
