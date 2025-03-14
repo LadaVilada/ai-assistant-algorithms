@@ -20,6 +20,6 @@ cd ..
 echo "Adding lambda_function.py to the root of the archive..."
 cp src/lambdas/ai-assistant/lambda_function_1.py .
 zip -g lambda.zip lambda_function_1.py
-#zip -g lambda.zip src/lambda_function_1.py
+#zip -g lambda.zip src/test_function.py
 
 echo "Done! Lambda package created: lambda.zip"

@@ -2,9 +2,7 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Dict, Any
 
-import injectable
-
-from src.ai_assistant.core.utils.dependency_injector import DependencyInjector
+# from src.ai_assistant.core.utils.dependency_injector import DependencyInjector
 
 
 class BaseBot(ABC):

@@ -1,7 +1,7 @@
 import time
-from ai_assistant.bots.base_bot import BaseBot
 
-from ai_assistant.core import DocumentService, VectorStore
+from ai_assistant.bots.base.base_bot import BaseBot
+from ai_assistant.core import VectorStore, DocumentService
 
 
 class AlgorithmsBot(BaseBot):

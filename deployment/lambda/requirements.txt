@@ -1,5 +1,4 @@
  #Lambda specific dependencies
- #Lambda specific dependencies
 
  # Core dependencies
  boto3

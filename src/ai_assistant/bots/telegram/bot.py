@@ -1,12 +1,10 @@
-# Import your existing RAG components
 from typing import Dict, Any
 
-from ai_assistant.algorithms.bot import AlgorithmsBot
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-from src.ai_assistant.bots.base.base_bot import BaseBot
-
+from ai_assistant.bots.algorithms.bot import AlgorithmsBot
+from ai_assistant.bots.base.base_bot import BaseBot
 
 class TelegramAlgorithmsBot(BaseBot):
 

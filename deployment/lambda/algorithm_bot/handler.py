@@ -8,8 +8,8 @@ import sys
 from openai import OpenAI
 from pydantic import BaseModel, ValidationError
 
-from src.ai_assistant.bots.algorithms.bot import AlgorithmsBot
-from src.ai_assistant.bots.telegram.bot import TelegramAlgorithmsBot
+from ai_assistant.bots.algorithms.bot import AlgorithmsBot
+from ai_assistant.bots.telegram.bot import TelegramAlgorithmsBot
 
 # Ensure AWS Lambda finds dependencies
 sys.path.insert(0, os.path.join(os.getcwd()))

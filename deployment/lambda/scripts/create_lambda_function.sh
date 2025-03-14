@@ -11,10 +11,10 @@ NC='\033[0m' # No Color
 FUNCTION_NAME="telegram-ai-assistant"
 ROLE_NAME="telegram-ai-assistant-lambda-role"
 REGION="us-east-1"
-RUNTIME="python3.9"
-HANDLER="lambda_function.lambda_handler"
-MEMORY_SIZE=512  # Increased for better performance with RAG
-TIMEOUT=60       # Increased for RAG processing
+AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+ROLE_ARN="arn:aws:iam::$AWS_ACCOUNT_ID:role/$ROLE_NAME"
+ECR_REPOSITORY="${FUNCTION_NAME}-ecr"
+ECR_IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${ECR_REPOSITORY}:latest"
 
 # Ensure AWS CLI is installed
 if ! command -v aws &> /dev/null; then
@@ -22,47 +22,59 @@ if ! command -v aws &> /dev/null; then
     exit 1
 fi
 
-# Get AWS Account ID
-AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-ROLE_ARN="arn:aws:iam::$AWS_ACCOUNT_ID:role/$ROLE_NAME"
+# Load environment variables from .env file if it exists
+if [ -f .env ]; then
+    echo -e "${YELLOW}Loading environment variables from .env file...${NC}"
+    export $(grep -v '^#' .env | xargs)
+else
+    echo -e "${RED}ERROR: .env file not found!${NC}"
+    exit 1
+fi
 
-# Create deployment package
-echo -e "${YELLOW}Creating deployment package...${NC}"
-mkdir -p package
-pip install -r deployment/lambda/scripts/requirements.txt --target ./package
+# Validate TELEGRAM_BOT_TOKEN
+if [ -z "$TELEGRAM_BOT_TOKEN" ]; then
+    echo -e "${RED}ERROR: TELEGRAM_BOT_TOKEN is empty! Make sure .env is loaded.${NC}"
+    exit 1
+else
+    echo -e "${GREEN}Using TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}${NC}"
+fi
 
-# Zip deployment package
-cd package
-zip -r ../lambda.zip .
-cd ..
+# Check if function exists
+FUNCTION_EXISTS=$(aws lambda list-functions --query "Functions[?FunctionName=='$FUNCTION_NAME'].FunctionName" --output text)
 
-# Add lambda function to package
-cp ./deployment/lambda/telegram_bot/lambda_function.py .
-zip -g lambda.zip lambda_function.py
+if [ -z "$FUNCTION_EXISTS" ]; then
+    # Function doesn't exist, create it
+    echo -e "${YELLOW}Creating new Lambda function with container image...${NC}"
 
-# Create or update Lambda function
-echo -e "${YELLOW}Creating/Updating Lambda function...${NC}"
-aws lambda create-function \
-    --function-name "$FUNCTION_NAME" \
-    --runtime "$RUNTIME" \
-    --role "$ROLE_ARN" \
-    --handler "$HANDLER" \
-    --zip-file fileb://lambda.zip \
-    --timeout 30 \
-    --memory-size 256 \
-    --environment "Variables={
-        ENVIRONMENT=production,
-        LOG_LEVEL=INFO
-    }"
+    aws lambda create-function \
+        --function-name "$FUNCTION_NAME" \
+        --package-type Image \
+        --code ImageUri="$ECR_IMAGE_URI" \
+        --role "$ROLE_ARN" \
+        --timeout 60 \
+        --memory-size 512 \
+        --environment "Variables={
+            TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN},
+            ENVIRONMENT=production,
+            LOG_LEVEL=INFO
+        }"
+else
+    # Function exists, update it
+    echo -e "${YELLOW}Updating existing Lambda function with container image...${NC}"
 
-# Configure function settings
-echo -e "${YELLOW}Configuring Lambda function...${NC}"
-aws lambda update-function-configuration \
-    --function-name "$FUNCTION_NAME" \
-    --timeout 30 \
-    --memory-size 256
+    aws lambda update-function-code \
+        --function-name "$FUNCTION_NAME" \
+        --image-uri "$ECR_IMAGE_URI"
 
-echo -e "${GREEN}Lambda function $FUNCTION_NAME created successfully!${NC}"
+    aws lambda update-function-configuration \
+        --function-name "$FUNCTION_NAME" \
+        --timeout 60 \
+        --memory-size 512 \
+        --environment "Variables={
+            TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN},
+            ENVIRONMENT=production,
+            LOG_LEVEL=INFO
+        }"
+fi
 
-# Clean up
-rm -rf package lambda.zip lambda_function.py
+echo -e "${GREEN}Lambda function $FUNCTION_NAME created/updated successfully!${NC}"
