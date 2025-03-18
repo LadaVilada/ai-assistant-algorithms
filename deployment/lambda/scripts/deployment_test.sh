@@ -24,6 +24,9 @@ mkdir -p package
 # Install required packages
 pip install requests -t ./package
 
+# Install development dependencies
+pip install -r requirements-dev.txt
+
 # Zip deployment package
 cd package
 zip -r ../lambda.zip .
@@ -51,3 +54,17 @@ echo -e "${GREEN}Lambda function $FUNCTION_NAME updated successfully!${NC}"
 
 # Clean up
 rm -rf package lambda.zip
+
+# Start local development server
+./scripts/dev.sh local
+
+# In another terminal, start ngrok
+ngrok http 8080
+
+# Update your Telegram webhook to the ngrok URL
+
+# Run tests before deployment
+./scripts/dev.sh test
+
+# Deploy only code changes (much faster)
+./scripts/dev.sh quick-deploy

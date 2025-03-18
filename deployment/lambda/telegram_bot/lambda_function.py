@@ -1,6 +1,6 @@
 import json
-import os
 import logging
+import os
 import sys
 from typing import Dict, Any
 
@@ -12,8 +12,6 @@ from src.ai_assistant.core import LoggingConfig
 from src.ai_assistant.core.utils.dependency_injector import DependencyInjector
 from src.ai_assistant.bots.algorithms.bot import AlgorithmsBot
 from src.ai_assistant.bots.telegram.base_telegram_bot import TelegramBot
-from src.ai_assistant.core.services.rag_service import RAGService
-from src.ai_assistant.core.services.llm_service import LLMService
 
 # Setup logging
 logging.basicConfig(
