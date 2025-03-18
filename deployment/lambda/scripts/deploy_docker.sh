@@ -20,6 +20,7 @@ else
 fi
 
 echo -e "${YELLOW}Copying .env to /var/task...${NC}"
+mkdir -p deployment/lambda/telegram_bot
 cp .env deployment/lambda/telegram_bot/.env
 
 # Verify if the copy was successful
@@ -87,6 +88,12 @@ RUN touch ${LAMBDA_TASK_ROOT}/deployment/__init__.py \
 COPY deployment/lambda/requirements.txt ${LAMBDA_TASK_ROOT}/
 RUN pip install --target ${LAMBDA_TASK_ROOT} -r ${LAMBDA_TASK_ROOT}/requirements.txt
 
+# Debugging: Verify installation inside the image
+RUN python3 -c "import langchain_community; print('Langchain installed successfully!')"
+
+#COPY deployment/lambda/requirements.txt ${LAMBDA_TASK_ROOT}/
+#RUN pip install --target ${LAMBDA_TASK_ROOT} -r ${LAMBDA_TASK_ROOT}/requirements.txt
+
 # Set the handler
 CMD [ "lambda_function.lambda_handler" ]
 #CMD [ "deployment.lambda.telegram_bot.lambda_function.lambda_handler" ]
@@ -127,6 +134,17 @@ fi
 # Build the Docker image
 echo -e "${YELLOW}Building Docker image...${NC}"
 docker buildx build --platform=linux/amd64 --load --cache-from ${ECR_REPOSITORY}:latest -t ${ECR_REPOSITORY} .
+
+
+# Verify if image was built successfully
+if ! docker images | grep -q "${ECR_REPOSITORY}"; then
+    echo -e "${RED}ERROR: Docker image build failed!${NC}"
+    exit 1
+fi
+
+#echo -e "${YELLOW}Tagging and pushing image to AWS ECR...${NC}"
+#docker tag ${ECR_REPOSITORY}:latest ${ECR_IMAGE_URI}
+#docker push ${ECR_IMAGE_URI}
 
 # Tag the image
 echo -e "${YELLOW}Tagging Docker image...${NC}"

@@ -1,18 +1,37 @@
 import time
 
 from ai_assistant.bots.base.base_bot import BaseBot
-from ai_assistant.core import VectorStore, DocumentService
 
 
 class AlgorithmsBot(BaseBot):
 
-    def __init__(self):
+    def handle_message(self, update, message):
+        pass
+
+    def __init__(self, vector_store=None, document_service=None):
         # Get a logger with potentially different log level
         # self.logger = LoggingConfig.get_logger(
         #     name=__name__,
         #     level=logging.DEBUG
         # )
         super().__init__()
+
+        # Use dependency injection if services are provided
+        if vector_store:
+            self.vector_store = vector_store
+        else:
+            # Late import to avoid circular dependencies
+            from ai_assistant.core import VectorStore
+            self.vector_store = VectorStore()
+
+        if document_service:
+            self.loader = document_service
+        else:
+            # Late import to avoid circular dependencies
+            from ai_assistant.core import DocumentService
+            self.loader = DocumentService()
+        from ai_assistant.core import VectorStore, DocumentService
+
         self.vector_store = VectorStore()
         self.loader = DocumentService()
 

@@ -3,7 +3,6 @@ from typing import Dict, Any
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-from ai_assistant.bots.algorithms.bot import AlgorithmsBot
 from ai_assistant.bots.base.base_bot import BaseBot
 
 class TelegramAlgorithmsBot(BaseBot):
@@ -23,7 +22,10 @@ class TelegramAlgorithmsBot(BaseBot):
         self.token = token
 
         # Use AlgorithmsBot as the underlying query processor
+        # Late import and initialization to avoid circular dependencies
+        from ai_assistant.bots.algorithms.bot import AlgorithmsBot
         self.algorithms_bot = AlgorithmsBot()
+
         self.application = None
         # Store the last result for each user
         self.last_results = {}
