@@ -1,11 +1,22 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Any
-from telegram import Update
-from telegram.ext import ContextTypes
+from typing import Dict, Any, Optional, List
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    CallbackQueryHandler,
+    ConversationHandler,
+    ContextTypes,
+    filters
+)
+import json
 import logging
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
-
 from ai_assistant.bots.base.base_bot import BaseBot
+from ai_assistant.core.utils.logging import LoggingConfig
+
+# Define conversation states
+AWAITING_QUERY = 1
 
 class TelegramBot:
     """Base class for Telegram bot implementations using composition pattern."""
@@ -21,9 +32,84 @@ class TelegramBot:
         self.token = token
         self.bot = underlying_bot
         self.application = None
-        
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = LoggingConfig.get_logger(__name__)
         self.last_results = {}
+
+    async def handle_lambda_event(self, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+        """
+        Handle AWS Lambda events for Telegram webhook.
+        The method follows this flow:
+        Parse Lambda event → Extract Telegram message → 
+        Process with bot → Format response → Return to API Gateway
+        
+        Args:
+            event: AWS Lambda event containing Telegram update
+            context: AWS Lambda context
+            
+        Returns:
+            Dict containing response for API Gateway
+        """
+        try:
+            # Log the received event (sanitized)
+            self.logger.info(f"Received event type: {event.get('httpMethod', 'UNKNOWN')}")
+            
+            # Parse the Telegram update from the event
+            if 'body' not in event:
+                raise ValueError("No body in event")
+                
+            body = event['body']
+            if isinstance(body, str):
+                body = json.loads(body)
+                
+            # Extract message from update
+            if 'message' not in body:
+                raise ValueError("No message in Telegram update")
+                
+            message = body['message']
+            chat_id = message.get('chat', {}).get('id')
+            text = message.get('text', '')
+            
+            if not chat_id or not text:
+                raise ValueError("Missing chat_id or text in message")
+                
+            # Process the message using the underlying bot
+            result = self.bot.process_query(text)
+            
+            # Format response for Telegram
+            response_text = (
+                f"{result['response']}\n\n"
+                f"[Sources found: {len(result.get('sources', []))}]"
+            )
+            
+            # Send response back to Telegram
+            telegram_response = {
+                'method': 'sendMessage',
+                'chat_id': chat_id,
+                'text': response_text,
+                'parse_mode': 'Markdown'
+            }
+            
+            # Store result for potential sources request
+            self.last_results[chat_id] = result
+            
+            return {
+                'statusCode': 200,
+                'headers': {'Content-Type': 'application/json'},
+                'body': json.dumps(telegram_response)
+            }
+            
+        except ValueError as ve:
+            self.logger.error(f"Validation error: {ve}")
+            return {
+                'statusCode': 400,
+                'body': json.dumps({'error': str(ve)})
+            }
+        except Exception as e:
+            self.logger.error(f"Error processing Telegram update: {e}")
+            return {
+                'statusCode': 500,
+                'body': json.dumps({'error': 'Internal server error'})
+            }
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle incoming Telegram messages."""
@@ -113,6 +199,7 @@ class TelegramBot:
             # Ensure proper cleanup
             if self.application:
                 asyncio.run(self.stop())
+
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /start command."""
         await update.message.reply_text(
