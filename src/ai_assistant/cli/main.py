@@ -15,6 +15,8 @@ from ai_assistant.core.utils.logging import LoggingConfig
 from ai_assistant.telegram.algorithms_bot import TelegramAlgorithmsBot
 
 from ai_assistant.core import DocumentService, VectorStore
+from ai_assistant.core.dependency_injector import DependencyInjector
+from ai_assistant.telegram.telegram_bot import TelegramBot
 
 
 def ingest_documents(rag_service, directory_path):
@@ -85,20 +87,22 @@ def ingest_documents(rag_service, directory_path):
 class CLIApplication:
     """
     Command-line interface for interacting with AI assistants
-    Provides multiple modes of interaction
+    Uses dependency injection for service management
     """
     def __init__(self):
         self.logger = LoggingConfig.get_logger(__name__)
+        self._initialize_services()
 
-        # Initialize core services
-        self.embedding_service = EmbeddingService()
-        self.vector_store = VectorStore()
-        # self.rag_service = RAGService()
-        self.document_loader = DocumentService()
-        self.llm_service = LLMService()
-
-        # Initialize RAG service
-        self.rag_service = RAGService(
+    def _initialize_services(self):
+        """Initialize core services using dependency injection."""
+        # Get or create services
+        self.embedding_service = DependencyInjector.get_service('embedding')
+        self.vector_store = DependencyInjector.get_service('vector_store')
+        self.document_loader = DependencyInjector.get_service('document')
+        self.llm_service = DependencyInjector.get_service('llm')
+        
+        # Create RAG service with dependencies
+        self.rag_service = DependencyInjector.get_service('rag',
             loader=self.document_loader,
             embedding_generator=self.embedding_service,
             vector_store=self.vector_store
@@ -108,10 +112,13 @@ class CLIApplication:
         """
         Start an interactive CLI session with the specified bot
         """
-        # Initialize the appropriate bot
         try:
+            # Get services from dependency injector
+            services = DependencyInjector.get_all_services()
+            
+            # Initialize the appropriate bot
             if bot_type == 'algorithms':
-                bot = AlgorithmsBot(self.rag_service, self.llm_service)
+                bot = AlgorithmsBot(services['rag'], services['llm'])
             else:
                 self.logger.error(f"Unsupported bot type: {bot_type}")
                 return
@@ -212,7 +219,9 @@ class CLIApplication:
         Run predefined tests for a specific bot
         """
         if bot_type == 'algorithms':
-            bot = AlgorithmsBot(self.rag_service, self.llm_service)
+            # Get services from dependency injector
+            services = DependencyInjector.get_all_services()
+            bot = AlgorithmsBot(services['rag'], services['llm'])
             test_results = bot.run_tests()
 
             print(f"🧪 Test Results for {bot_type.capitalize()} Bot:")
@@ -226,17 +235,26 @@ class CLIApplication:
 
     def start_telegram_bot(self, token: Optional[str] = None):
         """
-        Start the Telegram bot
+        Start the Telegram bot using dependency injection
         """
         if not token:
             token = input("Enter Telegram Bot Token: ").strip()
 
         try:
-            bot = TelegramAlgorithmsBot(token)
+            # Get services from dependency injector
+            services = DependencyInjector.get_all_services()
+            
+            # Create algorithms bot
+            algorithms_bot = AlgorithmsBot(services['rag'], services['llm'])
+            
+            # Create Telegram bot with algorithms bot
+            telegram_bot = TelegramBot(token, algorithms_bot)
+            
             print("🚀 Starting Telegram Bot...")
-            bot.run()
+            telegram_bot.run()
         except Exception as e:
             self.logger.error(f"Failed to start Telegram bot: {e}")
+            raise
 
 def main():
     # Load environment variables

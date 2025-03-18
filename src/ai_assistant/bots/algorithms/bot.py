@@ -1,47 +1,43 @@
+"""Bot implementation for algorithm-related queries."""
 import time
+from typing import Dict, Any, List, Optional
 
 from ai_assistant.bots.base.base_bot import BaseBot
+from ai_assistant.core.services.rag_service import RAGService
+from ai_assistant.core.services.llm_service import LLMService
+from ai_assistant.core.utils.logging import LoggingConfig
 
 
 class AlgorithmsBot(BaseBot):
+    """Bot implementation for algorithm-related queries."""
 
-    def handle_message(self, update, message):
-        pass
-
-    def __init__(self, vector_store=None, document_service=None):
-        # Get a logger with potentially different log level
-        # self.logger = LoggingConfig.get_logger(
-        #     name=__name__,
-        #     level=logging.DEBUG
-        # )
-        super().__init__()
-
-        # Use dependency injection if services are provided
-        if vector_store:
-            self.vector_store = vector_store
-        else:
-            # Late import to avoid circular dependencies
-            from ai_assistant.core import VectorStore
-            self.vector_store = VectorStore()
-
-        if document_service:
-            self.loader = document_service
-        else:
-            # Late import to avoid circular dependencies
-            from ai_assistant.core import DocumentService
-            self.loader = DocumentService()
-        from ai_assistant.core import VectorStore, DocumentService
-
-        self.vector_store = VectorStore()
-        self.loader = DocumentService()
-
-    def process_query(self, query: str):
+    def __init__(self, rag_service: RAGService, llm_service: LLMService):
         """
-        Specific implementation for algorithms bot
-        Can include additional logic specific to algorithms
+        Initialize the algorithms bot with required services.
+        
+        Args:
+            rag_service: RAG service for query processing
+            llm_service: LLM service for response generation
+        """
+        super().__init__(rag_service, llm_service)
+        self.logger = LoggingConfig.get_logger(__name__)
+
+    def process_query(self, query: str) -> Dict[str, Any]:
+        """
+        Process a query and return a response with sources.
+        
+        Args:
+            query: The user's query string
+            
+        Returns:
+            Dict containing:
+                - query: Original query
+                - response: Generated response
+                - sources: List of source documents
+                - processing_time_seconds: Time taken to process
+                - retrieved_count: Number of sources retrieved
         """
         self.logger.info("Starting Algorithm Learning Assistant: process_query method")
-
         start_time = time.time()
 
         try:
@@ -50,7 +46,7 @@ class AlgorithmsBot(BaseBot):
             # Calculate processing time
             processing_time = time.time() - start_time
 
-            # Prepare result object with more detailed source information
+            # Prepare result object with detailed source information
             result = {
                 "query": query,
                 "response": response,
@@ -58,8 +54,8 @@ class AlgorithmsBot(BaseBot):
                     {
                         "title": doc.get("metadata", {}).get("source", "Unknown"),
                         "score": doc.get("score", 0),
-                        "metadata": doc.get("metadata", {}),  # Include full metadata
-                        "text": doc.get("text", "")  # Include the text content
+                        "metadata": doc.get("metadata", {}),
+                        "text": doc.get("text", "")
                     }
                     for doc in sources
                 ],
@@ -82,11 +78,12 @@ class AlgorithmsBot(BaseBot):
                 "retrieved_count": 0
             }
 
-
-    def run_tests(self):
+    def run_tests(self) -> List[Dict[str, str]]:
         """
-        Optional method for running bot-specific tests
-        Can be used for local testing without Telegram
+        Run predefined tests for the algorithms bot.
+        
+        Returns:
+            List of test results containing queries and responses
         """
         test_queries = [
             "What is a dataset?",

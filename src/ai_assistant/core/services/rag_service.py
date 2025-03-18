@@ -2,9 +2,10 @@
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 
-from .embedding_service import EmbeddingService
-from .. import DocumentService, VectorStore
-from ..utils.logging import LoggingConfig
+from ai_assistant.core.services.embedding_service import EmbeddingService
+from ai_assistant.core.services.document_service import DocumentService
+from ai_assistant.core.infrastructure.vector_store import VectorStore
+from ai_assistant.core.utils.logging import LoggingConfig
 
 
 class RAGService:

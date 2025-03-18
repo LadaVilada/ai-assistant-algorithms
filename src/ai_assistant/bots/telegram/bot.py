@@ -1,35 +1,31 @@
 from typing import Dict, Any
-
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import ContextTypes
+from ai_assistant.bots.telegram.base_telegram_bot import TelegramBot
+from ai_assistant.bots.algorithms.bot import AlgorithmsBot
 
-from ai_assistant.bots.base.base_bot import BaseBot
-
-class TelegramAlgorithmsBot(BaseBot):
-
+class TelegramAlgorithmsBot:
+    """Telegram bot implementation for algorithm queries using composition pattern."""
+    
     def __init__(self, token: str):
-
-        # Setup logging for the Telegram bot
-        super().__init__()
-        # LoggingConfig.setup_logging(
-        #     log_level=logging.INFO,
-        #     app_name='telegram_algorithms_bot'
-        # )
-
-        # Get a logger specific to this class
-        # self.logger = LoggingConfig.get_logger(__name__)
-
-        self.token = token
-
-        # Use AlgorithmsBot as the underlying query processor
-        # Late import and initialization to avoid circular dependencies
-        from ai_assistant.bots.algorithms.bot import AlgorithmsBot
+        """
+        Initialize the Telegram bot with an algorithms bot.
+        
+        Args:
+            token: Telegram bot token
+        """
+        # Create the underlying algorithms bot
         self.algorithms_bot = AlgorithmsBot()
+        # Create the Telegram bot wrapper
+        self.telegram_bot = TelegramBot(token, self.algorithms_bot)
 
-        self.application = None
-        # Store the last result for each user
-        self.last_results = {}
+    def run(self):
+        """Run the Telegram bot."""
+        self.telegram_bot.run()
 
+    def handle_lambda_event(self, event, context):
+        """Handle Lambda events."""
+        return self.telegram_bot.handle_lambda_event(event, context)
 
     def process_query(self, query: str) -> Dict[str, Any]:
         """
@@ -38,90 +34,4 @@ class TelegramAlgorithmsBot(BaseBot):
             Delegates to AlgorithmsBot for processing
         """
         return self.algorithms_bot.process_query(query)
-
-    async def start_command(self, update, context):
-        """Handle /start command"""
-        await (update.message
-               .reply_text("Hi! I'm your algorithm assistant. "
-                           "Ask me a question, and I'll help you find the answer."))
-
-    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Send help message when /help command is issued."""
-        await update.message.reply_text(
-            "You can ask me questions about algorithms and data structures. "
-            "To get information about sources, use the /sources command after receiving an answer."
-        )
-
-    async def handle_message(self, update: Update, message: str):
-        """Process user messages and respond using RAG."""
-        user_id = update.effective_user.id
-        # TODO: check if query == message
-        query = update.message.text
-
-        # Handle 'sources' request
-        if query.lower() == 'sources' or query.lower() == '/sources':
-            if user_id in self.last_results:
-                sources_text = self.format_sources(self.last_results[user_id].get('sources', []))
-                await update.message.reply_text(sources_text)
-            else:
-                await update.message.reply_text("I don't have a previous answer to show sources for.")
-            return
-
-        # Process regular query
-        await update.message.reply_text("🔍 Searching for an answer...")
-
-        # Debug: Print the RAG chain query method signature
-        self.logger.info(f"RAG Chain query method signature: {query}")
-
-        # Handle incoming messages
-        try:
-            # Call your existing RAG pipeline
-            result = self.algorithms_bot.process_query(query)
-
-            self.logger.info(f"Processed message: {query}")
-            # Debug: Log the actual result structure
-            self.logger.info(f"RAG Query Result: {result}")
-
-            # Format and send response
-            response_text = (
-                f"{result['response']}\n\n"
-                f"[Sources found: {len(result.get('sources', []))}]"
-            )
-            await update.message.reply_text(response_text)
-
-        except Exception as e:
-            self.logger.error(f"Error processing message: {e}")
-        await update.message.reply_text(
-            "Sorry, an error occurred while processing your request. Please try again."
-        )
-
-    def setup_handlers(self):
-        """Set up Telegram bot handlers"""
-        self.application = Application.builder().token(self.token).build()
-
-        self.application.add_handler(CommandHandler('start', self.start_command))
-        self.application.add_handler(CommandHandler('help', self.help_command))
-        self.application.add_handler(
-            MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message)
-        )
-
-    def format_sources(self, sources):
-        """Format sources for Telegram message."""
-        if not self:
-            return "No available sources."
-
-        result = "📚 Sources:\n\n"
-        for i, source in enumerate(sources):
-            doc_path = source.get("title", "Unknown")
-            doc_name = doc_path.split("/")[-1] if "/" in doc_path else doc_path
-            page = source.get("metadata", {}).get("page", "N/A")
-            score = source.get("score", 0)
-
-            result += f"{i + 1}. {doc_name} (Page: {page}, Relevance: {score:.2f})\n"
-
-        return result
-
-    def run(self):
-        """Run the Telegram bot"""
-        self.setup_handlers()
-        self.application.run_polling(drop_pending_updates=True)
+                                                                                                                                                                                                                           

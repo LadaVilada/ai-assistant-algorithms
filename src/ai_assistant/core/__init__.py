@@ -1,10 +1,20 @@
-from .services.document_service import DocumentService  # Relative import
-from .infrastructure.vector_store import VectorStore  # Relative import
-from .services.rag_service import RAGService  # Relative import
-from .services.llm_service import LLMService  # Relative import
-from .services.embedding_service import EmbeddingService  # Relative import
+"""Core services and utilities for the AI Assistant."""
+
+from .services.document_service import DocumentService
+from .infrastructure.vector_store import VectorStore
+from .services.rag_service import RAGService
+from .services.llm_service import LLMService
+from .services.embedding_service import EmbeddingService
 from .utils.logging import LoggingConfig
-from ..bots.algorithms.bot import AlgorithmsBot
-from ..bots.base.base_bot import BaseBot
-from ..bots.telegram.bot import TelegramAlgorithmsBot
+from .utils.dependency_injector import DependencyInjector
+
+__all__ = [
+    'DocumentService',
+    'VectorStore',
+    'RAGService',
+    'LLMService',
+    'EmbeddingService',
+    'LoggingConfig',
+    'DependencyInjector'
+]
 
