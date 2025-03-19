@@ -1,7 +1,55 @@
+# Git
 .git
-__pycache__/
+.gitignore
+
+# Virtual environments
 venv/
+env/
+.env
+
+# Python cache
+__pycache__/
 *.pyc
 *.pyo
-*.swp
+*.pyd
+.pytest_cache/
+
+# IDE files
+.vscode/
+.idea/
+
+# Large data files or logs
+*.log
+*.sqlite
+*.md
+*.txt
+!requirements.txt
+*.zip
+*.tar.gz
+
+# Build and distribution files
+build/
+dist/
+*.egg-info/
+
+# OS generated files
 .DS_Store
+Thumbs.db
+
+# Other
+tests/
+docs/
+
+#deployment/*
+#!deployment/lambda/telegram_bot/lambda_function.py
+#!deployment/lambda/requirements.txt
+
+scripts/
+.coverage
+htmlcov/
+
+# Explicitly include necessary files and directories
+src/
+!src/ai_assistant/
+*.py
+!lambda_function.py

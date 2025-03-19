@@ -7,7 +7,15 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
 
-cd "$(dirname "$0")/../../.." || exit 1
+# Configuration
+FUNCTION_NAME="telegram-ai-assistant"
+REGION="us-east-1"
+AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+ECR_REPOSITORY="${FUNCTION_NAME}"
+ECR_IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${ECR_REPOSITORY}:latest"
+
+# Ensure we're in the project root
+cd "$(dirname "$0")/../../.."
 echo -e "${YELLOW}Changed directory to project root: $(pwd)${NC}"
 
 # Load environment variables from .env file
@@ -31,23 +39,6 @@ else
     exit 1
 fi
 
-# Get AWS Account ID
-AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query "Account" --output text)
-
-# Ensure AWS_ACCOUNT_ID is not empty
-if [ -z "$AWS_ACCOUNT_ID" ]; then
-    echo -e "${RED}ERROR: AWS_ACCOUNT_ID is empty! Check AWS credentials.${NC}"
-    exit 1
-fi
-
-# Configuration
-FUNCTION_NAME="telegram-ai-assistant"
-REGION="us-east-1"
-ECR_REPOSITORY="${FUNCTION_NAME}-ecr"
-ROLE_ARN="arn:aws:iam::$AWS_ACCOUNT_ID:role/$ROLE_NAME"
-ECR_IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${ECR_REPOSITORY}:latest"
-AWS_ACCOUNT=$(aws sts get-caller-identity --query "Account" --output text)
-
 if [ ! -f deployment/lambda/telegram_bot/lambda_function.py ]; then
     echo -e "${RED}ERROR: lambda_function.py not found in deployment/lambda/telegram_bot/${NC}"
     exit 1
@@ -58,7 +49,10 @@ fi
 echo -e "${YELLOW}Copying lambda_function.py to the root...${NC}"
 cp deployment/lambda/telegram_bot/lambda_function.py lambda_function.py
 
-# Create Dockerfile
+
+echo -e "${YELLOW}Starting Docker deployment process...${NC}"
+
+# Step 2: Create a minimal Dockerfile
 echo -e "${YELLOW}Creating Dockerfile...${NC}"
 cat > Dockerfile << 'EOF'
 FROM public.ecr.aws/lambda/python:3.9
@@ -66,13 +60,15 @@ FROM public.ecr.aws/lambda/python:3.9
 # Define Lambda Task Root
 ENV LAMBDA_TASK_ROOT=/var/task
 
+# Set working directory
+WORKDIR ${LAMBDA_TASK_ROOT}
+
 # Set Python path to include Lambda task root and src/
 ENV PYTHONPATH="/var/task:/var/task/src"
 
 # Make sure lambda_function.py is at the root level
 COPY deployment/lambda/telegram_bot/lambda_function.py ${LAMBDA_TASK_ROOT}/lambda_function.py
-# Copy .env file for runtime environment variables
-COPY .env ${LAMBDA_TASK_ROOT}/.env
+COPY .env* /var/task/.env
 
 # Copy your project files
 COPY . ${LAMBDA_TASK_ROOT}/
@@ -85,42 +81,37 @@ RUN touch ${LAMBDA_TASK_ROOT}/deployment/__init__.py \
     && touch ${LAMBDA_TASK_ROOT}/src/ai_assistant/__init__.py
 
 # Install dependencies
-COPY deployment/lambda/requirements.txt ${LAMBDA_TASK_ROOT}/
-RUN pip install --target ${LAMBDA_TASK_ROOT} -r ${LAMBDA_TASK_ROOT}/requirements.txt
+COPY requirements.txt ${LAMBDA_TASK_ROOT}/requirements.txt
+RUN pip wheel --wheel-dir=/tmp/wheels -r ${LAMBDA_TASK_ROOT}/requirements.txt
+RUN pip install --no-cache-dir --target ${LAMBDA_TASK_ROOT} --find-links=/tmp/wheels -r ${LAMBDA_TASK_ROOT}/requirements.txt
 
 # Debugging: Verify installation inside the image
 RUN python3 -c "import langchain_community; print('Langchain installed successfully!')"
 
-#COPY deployment/lambda/requirements.txt ${LAMBDA_TASK_ROOT}/
-#RUN pip install --target ${LAMBDA_TASK_ROOT} -r ${LAMBDA_TASK_ROOT}/requirements.txt
-
 # Set the handler
 CMD [ "lambda_function.lambda_handler" ]
-#CMD [ "deployment.lambda.telegram_bot.lambda_function.lambda_handler" ]
 EOF
 
-echo -e "${YELLOW}Checking or Creating ECR repository...${NC}"
-aws ecr describe-repositories --repository-names ${ECR_REPOSITORY} >/dev/null 2>&1
+# Step 3: Build and tag the Docker image
+echo -e "${YELLOW}Building Docker image...${NC}"
+docker buildx build --platform=linux/amd64 --load -t ${FUNCTION_NAME}:latest .
 
-if [ $? -ne 0 ]; then
-    echo -e "${YELLOW}Repository not found. Creating it now...${NC}"
-    aws ecr create-repository --repository-name ${ECR_REPOSITORY}
-else
-    echo -e "${GREEN}Repository already exists!${NC}"
-fi
+# Additional verification
+docker images | grep "${FUNCTION_NAME}"
 
-#RUN echo "Checking lambda_function.py location inside container:" && ls -la ${LAMBDA_TASK_ROOT}/lambda_function.py
-
-# Log in to ECR
+# Step 4: Login to ECR
 echo -e "${YELLOW}Logging in to ECR...${NC}"
-aws ecr get-login-password --region ${REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT}.dkr.ecr.${REGION}.amazonaws.com
+aws ecr get-login-password --region ${REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com
 
+# Step 5: Create ECR repository if it doesn't exist
+echo -e "${YELLOW}Ensuring ECR repository exists...${NC}"
+aws ecr describe-repositories --repository-names ${ECR_REPOSITORY} >/dev/null 2>&1 || \
+    aws ecr create-repository --repository-name ${ECR_REPOSITORY}
 
 # After creating lambda_function.py
 echo "Checking if lambda_function.py was created:"
 ls -la lambda_function.py
 cat lambda_function.py | head -5
-
 
 # Before building, verify lambda_function.py exists
 echo -e "${YELLOW}Verifying lambda_function.py exists...${NC}"
@@ -131,37 +122,18 @@ else
     echo -e "${GREEN}lambda_function.py found!${NC}"
 fi
 
-# Build the Docker image
-echo -e "${YELLOW}Building Docker image...${NC}"
-docker buildx build --platform=linux/amd64 --load --cache-from ${ECR_REPOSITORY}:latest -t ${ECR_REPOSITORY} .
+# Step 6: Tag and push the image
+echo -e "${YELLOW}Tagging and pushing image...${NC}"
+docker tag ${ECR_REPOSITORY}:latest ${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${ECR_REPOSITORY}:latest
+docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${ECR_REPOSITORY}:latest
 
-
-# Verify if image was built successfully
-if ! docker images | grep -q "${ECR_REPOSITORY}"; then
-    echo -e "${RED}ERROR: Docker image build failed!${NC}"
-    exit 1
-fi
-
-#echo -e "${YELLOW}Tagging and pushing image to AWS ECR...${NC}"
-#docker tag ${ECR_REPOSITORY}:latest ${ECR_IMAGE_URI}
-#docker push ${ECR_IMAGE_URI}
-
-# Tag the image
-echo -e "${YELLOW}Tagging Docker image...${NC}"
-docker tag ${ECR_REPOSITORY}:latest ${AWS_ACCOUNT}.dkr.ecr.${REGION}.amazonaws.com/${ECR_REPOSITORY}:latest
-
-# Push the image to ECR
-echo -e "${YELLOW}Pushing Docker image to ECR...${NC}"
-docker push ${AWS_ACCOUNT}.dkr.ecr.${REGION}.amazonaws.com/${ECR_REPOSITORY}:latest
-#docker push ${ECR_REPOSITORY}:latest
-
-# Update the Lambda function to use the new container image
+# Step 7: Update Lambda function
 echo -e "${YELLOW}Updating Lambda function...${NC}"
 aws lambda update-function-code \
-        --function-name "${FUNCTION_NAME}" \
-        --image-uri "${ECR_IMAGE_URI}"
+    --function-name ${FUNCTION_NAME} \
+    --image-uri "${ECR_IMAGE_URI}"
 
-# Update function configuration
+# Update function configuration with token and environment variables
 echo -e "${YELLOW}Updating Lambda configuration...${NC}"
 aws lambda update-function-configuration \
               --function-name "${FUNCTION_NAME}" \
@@ -171,9 +143,13 @@ aws lambda update-function-configuration \
                   TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN},
                   ENVIRONMENT=production,
                   LOG_LEVEL=INFO
-              }"
+              }" \
+              --region ${REGION}
 
 echo -e "${GREEN}Lambda function ${FUNCTION_NAME} updated successfully with container image!${NC}"
 
-# Clean up
+# Step 8: Clean up
+echo -e "${YELLOW}Cleaning up...${NC}"
 rm -f Dockerfile
+
+echo -e "${GREEN}Deployment completed successfully!${NC}"
