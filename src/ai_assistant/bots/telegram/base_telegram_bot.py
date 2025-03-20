@@ -1,17 +1,16 @@
-from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional, List
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+import asyncio
+import json
+from typing import Dict, Any
+
+from telegram import Update
 from telegram.ext import (
     Application,
     CommandHandler,
     MessageHandler,
-    CallbackQueryHandler,
-    ConversationHandler,
     ContextTypes,
     filters
 )
-import json
-import logging
+
 from ai_assistant.bots.base.base_bot import BaseBot
 from ai_assistant.core.utils.logging import LoggingConfig
 
@@ -181,24 +180,29 @@ class TelegramBot:
             await self.application.shutdown()
 
     def run(self):
-        """Run the Telegram bot with proper lifecycle management."""
-        import asyncio
-        
-        async def main():
-            await self.start()
-            await self.application.run_polling(drop_pending_updates=True)
-        
+        """
+        Run the bot in a completely synchronous manner.
+        This approach avoids all the asyncio event loop conflicts.
+        """
         try:
-            asyncio.run(main())
+            self.logger.info("Starting Telegram bot...")
+
+            # Create a new application instance
+            self.application = Application.builder().token(self.token).build()
+
+            # Register handlers
+            self.application.add_handler(CommandHandler("start", self.start_command))
+            self.application.add_handler(CommandHandler("help", self.help_command))
+            self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
+
+            # Use the application's run_polling method which manages its own event loop
+            self.application.run_polling(drop_pending_updates=True)
+
         except KeyboardInterrupt:
             self.logger.info("Bot stopped by user")
         except Exception as e:
             self.logger.error(f"Error running bot: {e}")
             raise
-        finally:
-            # Ensure proper cleanup
-            if self.application:
-                asyncio.run(self.stop())
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /start command."""

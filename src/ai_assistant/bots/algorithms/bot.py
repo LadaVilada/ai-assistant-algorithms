@@ -11,6 +11,9 @@ from ai_assistant.core.utils.logging import LoggingConfig
 class AlgorithmsBot(BaseBot):
     """Bot implementation for algorithm-related queries."""
 
+    def handle_message(self, update, message):
+        pass
+
     def __init__(self, rag_service: RAGService, llm_service: LLMService):
         """
         Initialize the algorithms bot with required services.

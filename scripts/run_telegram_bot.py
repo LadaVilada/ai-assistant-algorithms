@@ -1,11 +1,12 @@
 import os
 import sys
 
-from ai_assistant.telegram.algorithms_bot import TelegramAlgorithmsBot
 
 # Add project root to Python path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, project_root)
+
+from ai_assistant.bots.telegram.bot import TelegramAlgorithmsBot
 
 def main():
     token = os.getenv('TELEGRAM_BOT_TOKEN')
