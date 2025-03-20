@@ -28,3 +28,7 @@ ingested_documents.json
 # Ignore macOS system files
 .DS_Store
 **/.DS_Store
+
+# Ignore key files
+.pem
+telegram-bot-key.pem
