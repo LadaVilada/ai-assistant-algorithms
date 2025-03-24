@@ -6,7 +6,7 @@ from typing import Dict, Any
 
 from ai_assistant.bots.algorithms.bot import AlgorithmsBot
 from ai_assistant.bots.telegram.base_telegram_bot import TelegramBot
-from src.ai_assistant.core.utils.dependency_injector import DependencyInjector
+from ai_assistant.core.utils.dependency_injector import DependencyInjector
 
 
 def initialize_services() -> Dict[str, Any]:

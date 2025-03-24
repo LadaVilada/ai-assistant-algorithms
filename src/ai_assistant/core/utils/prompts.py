@@ -2,7 +2,6 @@
 # between retrieved information and the LLM's pre-trained knowledge
 # when answering general questions
 
-
 def format_chunks(retrieved_chunks):
     pass
 

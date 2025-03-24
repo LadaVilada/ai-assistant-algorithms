@@ -180,14 +180,6 @@ class RAGService:
         # 1. Generate embeddings for the query
         query_embedding = self.embedding_generator.create_embeddings(query)
 
-        # # TODO: Implement retrieval logic with filtering
-        # # 2. Perform similarity search in vector store
-        # results = self.vector_store.similarity_search(
-        #     query_vector=query_embedding,
-        #     top_k=top_k,
-        #     filter_dict=filter_dict
-        # )
-
         print(type(self.vector_store))
         index_stats = self.vector_store.index.describe_index_stats()
         print(index_stats)  # See what the response contains
@@ -198,7 +190,6 @@ class RAGService:
 
 
         # 2. Retrieve relevant document chunks
-        # TODO: move to -> retrieved_chunks = self.vector_store.retrieve_documents(query_embedding, top_k)
         retrieved_chunks = self.vector_store.retrieve_documents(
             query_vector=query_embedding,
             top_k=top_k,
@@ -207,7 +198,8 @@ class RAGService:
 
         return retrieved_chunks
 
-    def format_retrieved_context(self, retrieved_docs: List[Dict[str, Any]]) -> str:
+    @staticmethod
+    def format_retrieved_context(retrieved_docs: List[Dict[str, Any]]) -> str:
         """Format retrieved documents into a context string for LLM.
 
         Args:
