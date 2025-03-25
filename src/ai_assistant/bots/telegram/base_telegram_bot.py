@@ -194,7 +194,12 @@ class TelegramBot:
         """Handle incoming messages with streaming support."""
         try:
             message = update.message
-            if not message or not message.text:
+            if not message:
+                self.logger.warning("Received update without message")
+                return
+
+            if not message.text:
+                self.logger.warning("Received message without text")
                 return
 
             # Get chat ID and user info
@@ -217,13 +222,14 @@ class TelegramBot:
             try:
                 # Stream response directly without awaiting
                 async for chunk in self.bot.stream_response(message.text):
-                    self._accumulated_text += chunk
-                    
-                    # Update message with rate limiting
-                    await self._update_message(context, chat_id)
+                    if chunk:  # Only process non-empty chunks
+                        self._accumulated_text += chunk
+                        
+                        # Update message with rate limiting
+                        await self._update_message(context, chat_id)
 
                 # Final update to ensure all text is shown
-                if self._current_message:
+                if self._current_message and self._accumulated_text:
                     await self._current_message.edit_text(
                         text=self._accumulated_text,
                         parse_mode='HTML'
@@ -252,6 +258,11 @@ class TelegramBot:
         
         # Check if enough time has passed since last update
         if current_time - self._last_update_time < self._update_interval:
+            return
+
+        # Don't update if text is empty
+        if not self._accumulated_text:
+            self.logger.warning("Attempted to update message with empty text")
             return
 
         try:
