@@ -215,11 +215,8 @@ class TelegramBot:
 
             # Process the message and get streaming response
             try:
-                # Get the async iterator from stream_response
-                response_stream = await self.bot.stream_response(message.text)
-                
-                # Iterate over the chunks
-                async for chunk in response_stream:
+                # Stream response directly without awaiting
+                async for chunk in self.bot.stream_response(message.text):
                     self._accumulated_text += chunk
                     
                     # Update message with rate limiting
