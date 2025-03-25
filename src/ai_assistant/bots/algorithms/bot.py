@@ -1,18 +1,16 @@
 """Bot implementation for algorithm-related queries."""
+from typing import Dict, Any, List, AsyncIterable
+
 import time
-from typing import Dict, Any, List, Optional
 
 from ai_assistant.bots.base.base_bot import BaseBot
-from ai_assistant.core.services.rag_service import RAGService
 from ai_assistant.core.services.llm_service import LLMService
+from ai_assistant.core.services.rag_service import RAGService
 from ai_assistant.core.utils.logging import LoggingConfig
 
 
 class AlgorithmsBot(BaseBot):
     """Bot implementation for algorithm-related queries."""
-
-    def handle_message(self, update, message):
-        pass
 
     def __init__(self, rag_service: RAGService, llm_service: LLMService):
         """
@@ -25,7 +23,21 @@ class AlgorithmsBot(BaseBot):
         super().__init__(rag_service, llm_service)
         self.logger = LoggingConfig.get_logger(__name__)
 
-    def process_query(self, query: str) -> Dict[str, Any]:
+    async def handle_message(self, update, message):
+        """Process incoming messages."""
+        if not message:
+            return
+            
+        try:
+            return await self.process_query(message)
+        except Exception as e:
+            self.logger.error(f"Error handling message: {e}")
+            return {
+                "error": True,
+                "response": "Sorry, I encountered an error processing your message."
+            }
+
+    async def process_query(self, query: str) -> Dict[str, Any]:
         """
         Process a query and return a response with sources.
         
@@ -44,7 +56,13 @@ class AlgorithmsBot(BaseBot):
         start_time = time.time()
 
         try:
-            response, sources = self.rag_service.query(query, self.llm_service)
+            # Get retrieved documents first
+            retrieved_docs = self.rag_service.retrieve(query, top_k=3)
+            
+            # Accumulate streaming response
+            response = ""
+            async for chunk in self.rag_service.query(query, self.llm_service):
+                response += chunk
 
             # Calculate processing time
             processing_time = time.time() - start_time
@@ -60,14 +78,14 @@ class AlgorithmsBot(BaseBot):
                         "metadata": doc.get("metadata", {}),
                         "text": doc.get("text", "")
                     }
-                    for doc in sources
+                    for doc in retrieved_docs
                 ],
                 "query_type": "algorithms",
                 "processing_time_seconds": processing_time,
-                "retrieved_count": len(sources)
+                "retrieved_count": len(retrieved_docs)
             }
 
-            self.logger.info(f"Query processed in {processing_time:.2f}s with {len(sources)} sources")
+            self.logger.info(f"Query processed in {processing_time:.2f}s with {len(retrieved_docs)} sources")
             return result
 
         except Exception as e:
@@ -80,6 +98,26 @@ class AlgorithmsBot(BaseBot):
                 "error": str(e),
                 "retrieved_count": 0
             }
+
+    async def stream_response(self, query: str) -> AsyncIterable[str]:
+        """Stream a response using the RAG service.
+        
+        Args:
+            query: The user's query
+            
+        Yields:
+            String chunks of the streaming response
+        """
+        try:
+            # Get retrieved documents first
+            retrieved_docs = self.rag_service.retrieve(query, top_k=3)
+            
+            # Stream response from RAG service
+            async for chunk in self.rag_service.query(query, self.llm_service):
+                yield chunk
+        except Exception as e:
+            self.logger.error(f"Error in streaming response: {str(e)}")
+            raise
 
     def run_tests(self) -> List[Dict[str, str]]:
         """

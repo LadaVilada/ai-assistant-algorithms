@@ -13,6 +13,7 @@ from telegram.ext import (
 
 from ai_assistant.bots.base.base_bot import BaseBot
 from ai_assistant.core.utils.logging import LoggingConfig
+from package.telegram.constants import ChatAction
 
 # Define conversation states
 AWAITING_QUERY = 1
@@ -33,6 +34,10 @@ class TelegramBot:
         self.application = None
         self.logger = LoggingConfig.get_logger(__name__)
         self.last_results = {}
+        self._accumulated_text = ""
+        self._current_message = None
+        self._last_update_time = 0.0
+        self._update_interval = 0.5  # Assuming a default update_interval
 
     async def handle_lambda_event(self, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         """
@@ -72,7 +77,7 @@ class TelegramBot:
                 raise ValueError("Missing chat_id or text in message")
                 
             # Process the message using the underlying bot
-            result = self.bot.process_query(text)
+            result = await self.bot.process_query(text)
             
             # Format response for Telegram
             response_text = (
@@ -169,9 +174,12 @@ class TelegramBot:
     async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /start command."""
         await update.message.reply_text(
-            "Hi! I'm your algorithm assistant. "
-            "Ask me a question, and I'll help you find the answer."
+            "👋 Welcome! I'm your AI-powered algorithm assistant. "
+            "Complex problems? No worries—I'll help you break them down into simple, "
+            "logical steps. Whether it's data structures, coding challenges, or algorithm design, "
+            "let's tackle them one piece at a time. Keep coding, keep learning, and let's build something great! 🚀"
         )
+
 
     @staticmethod
     async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -183,41 +191,132 @@ class TelegramBot:
         )
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle incoming Telegram messages."""
-        user_id = update.effective_user.id
-        query = update.message.text
-
-        # Handle 'sources' request
-        if query.lower() == 'sources' or query.lower() == '/sources':
-            if user_id in self.last_results:
-                sources_text = self.format_sources(self.last_results[user_id].get('sources', []))
-                await update.message.reply_text(sources_text)
-            else:
-                await update.message.reply_text("I don't have a previous answer to show sources for.")
-            return
-
-        # Process regular query
-        await update.message.reply_text("🔍 Searching for an answer...")
-
+        """Handle incoming messages with streaming support."""
         try:
-            # Use the underlying bot to process the query
-            result = self.bot.process_query(query)
-            self.logger.info(f"Processed message: {query}")
-            self.logger.info(f"RAG Query Result: {result}")
+            message = update.message
+            if not message or not message.text:
+                return
 
-            # Store result for potential sources request
-            self.last_results[user_id] = result
+            # Get chat ID and user info
+            chat_id = message.chat_id
+            user_id = str(message.from_user.id)
+            username = message.from_user.username or "Anonymous"
 
-            # Format and send response
-            response_text = (
-                f"{result['response']}\n\n"
-            )
-            await update.message.reply_text(response_text)
+            # Log incoming message
+            self.logger.info(f"Received message from {username} (ID: {user_id}): {message.text}")
+
+            # Send typing indicator
+            await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+
+            # Reset state for new message
+            self._accumulated_text = ""
+            self._current_message = None
+            self._last_update_time = 0.0
+
+            # Process the message and get streaming response
+            try:
+                # Get the async iterator from stream_response
+                response_stream = await self.bot.stream_response(message.text)
+                
+                # Iterate over the chunks
+                async for chunk in response_stream:
+                    self._accumulated_text += chunk
+                    
+                    # Update message with rate limiting
+                    await self._update_message(context, chat_id)
+
+                # Final update to ensure all text is shown
+                if self._current_message:
+                    await self._current_message.edit_text(
+                        text=self._accumulated_text,
+                        parse_mode='HTML'
+                    )
+
+            except Exception as e:
+                self.logger.error(f"Error during streaming response: {str(e)}")
+                await self._handle_error(context, chat_id, str(e))
+                return
+
+            # Clear state
+            self._current_message = None
+            self._accumulated_text = ""
+
+            # Log successful response
+            self.logger.info(f"Successfully processed message for {username} (ID: {user_id})")
 
         except Exception as e:
-            self.logger.error(f"Error processing message: {e}")
-            await update.message.reply_text(
-                "Sorry, an error occurred while processing your request. Please try again."
+            self.logger.error(f"Error handling message: {str(e)}")
+            await self._handle_error(context, chat_id, str(e))
+
+    async def _update_message(self, context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> None:
+        """Update the message with rate limiting and error handling."""
+        import time
+        current_time = time.time()
+        
+        # Check if enough time has passed since last update
+        if current_time - self._last_update_time < self._update_interval:
+            return
+
+        try:
+            if not self._current_message:
+                # Create new message
+                self._current_message = await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=self._accumulated_text,
+                    parse_mode='HTML',
+                    disable_web_page_preview=True
+                )
+            else:
+                # Update existing message
+                await self._current_message.edit_text(
+                    text=self._accumulated_text,
+                    parse_mode='HTML',
+                    disable_web_page_preview=True
+                )
+            
+            self._last_update_time = current_time
+
+        except Exception as e:
+            self.logger.error(f"Error updating message: {str(e)}")
+            # Handle different types of errors
+            if "Message is too long" in str(e):
+                # If message is too long, create a new one
+                self._current_message = None
+                self._accumulated_text = self._accumulated_text[:4000] + "..."
+                await self._update_message(context, chat_id)
+            elif "Message not modified" in str(e):
+                # Ignore this error as it's not critical
+                pass
+            else:
+                # For other errors, try to recover
+                await self._handle_error(context, chat_id, str(e))
+
+    async def _handle_error(self, context: ContextTypes.DEFAULT_TYPE, chat_id: int, error_msg: str = None) -> None:
+        """Handle errors gracefully with detailed error messages."""
+        error_message = (
+            "Sorry, I encountered an error processing your message.\n"
+            "Please try again or rephrase your question.\n"
+            f"Error: {error_msg if error_msg else 'Unknown error'}"
+        )
+        
+        try:
+            if self._current_message:
+                await self._current_message.edit_text(
+                    text=error_message,
+                    parse_mode='HTML'
+                )
+            else:
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=error_message,
+                    parse_mode='HTML'
+                )
+        except Exception as e:
+            self.logger.error(f"Error sending error message: {str(e)}")
+            # Fallback to plain text if HTML parsing fails
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=error_message
             )
 
 

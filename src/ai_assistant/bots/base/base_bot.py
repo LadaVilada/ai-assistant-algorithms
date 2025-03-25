@@ -1,6 +1,7 @@
 import logging
 from abc import ABC, abstractmethod
-from typing import Dict, Any
+from typing import Dict, Any, AsyncGenerator, AsyncIterable
+
 
 # from src.ai_assistant.core.utils.dependency_injector import DependencyInjector
 
@@ -42,7 +43,7 @@ class BaseBot(ABC):
         return LLMService()
 
     @abstractmethod
-    def handle_message(self, update, message):
+    async def handle_message(self, update, message):
         """
         Process incoming messages
         Must be implemented by specific bot types
@@ -50,10 +51,21 @@ class BaseBot(ABC):
         pass
 
     @abstractmethod
-    def process_query(self, query: str) -> Dict[str, Any]:
+    async def process_query(self, query: str) -> Dict[str, Any]:
+        """Process a user query and return a response.
+        Must be implemented by specific bot types.
         """
-        Process a user query and return a response
-        Must be implemented by specific bot types
+        pass
+
+    @abstractmethod
+    async def stream_response(self, query: str) -> AsyncIterable[str]:
+        """Stream a response for the given query.
+        
+        Args:
+            query: The user's query
+            
+        Yields:
+            String chunks of the streaming response
         """
         pass
 
@@ -65,7 +77,7 @@ class BaseBot(ABC):
         """
         raise NotImplementedError("Specific bot must implement run method")
 
-    def handle_lambda_event(self, event, context):
+    async def handle_lambda_event(self, event, context):
         """
         Handle AWS Lambda event with default error handling
 
@@ -81,7 +93,7 @@ class BaseBot(ABC):
             message = self._extract_message(event)
 
             # Process message
-            result = self.handle_message(event, message)
+            result = await self.handle_message(event, message)
 
             return {
                 'statusCode': 200,
@@ -124,7 +136,7 @@ class BaseBot(ABC):
 
         raise ValueError("Unable to extract message from event")
 
-    def get_response(self, query: str) -> Dict[str, Any]:
+    async def get_response(self, query: str) -> Dict[str, Any]:
         """
         Generic method to get bot response with error handling.
 
@@ -143,7 +155,7 @@ class BaseBot(ABC):
                 }
 
             # Process query
-            result = self.process_query(query)
+            result = await self.process_query(query)
 
             # Ensure consistent response structure
             if not isinstance(result, dict):

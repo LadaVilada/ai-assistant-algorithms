@@ -58,7 +58,7 @@ def store_conversation(session_id, user_id, user_message, assistant_response):
         timestamp = int(time.time())
         expiry_time = timestamp + (30 * 24 * 60 * 60)  # 30 days from now
 
-        Item = {
+        item = {
             'session_id': session_id,
             'timestamp': timestamp,
             'user_id': user_id,
@@ -67,32 +67,14 @@ def store_conversation(session_id, user_id, user_message, assistant_response):
             'ttl': expiry_time
         }
 
-        print(f"[LOG] Writing to DynamoDB: {Item}")  # Debugging line
+        print(f"[LOG] Writing to DynamoDB: {item}")  # Debugging line
 
-        conversation_table.put_item(Item=Item)  # Insert into DynamoDB
+        conversation_table.put_item(Item=item)  # Insert into DynamoDB
 
         return True
     except Exception as e:
         print(f"[ERROR] Failed to store conversation: {e}")
         return False
-
-
-
-def lambda_handler(event, context):
-    """
-    Universal Lambda handler that can route to different bot types
-    """
-    bot_type = event.get('bot_type', 'telegram')
-
-    if bot_type == 'telegram':
-        bot = TelegramAlgorithmsBot(os.getenv("TELEGRAM_BOT_TOKEN"))
-    elif bot_type == 'algorithms':
-        bot = AlgorithmsBot()
-    else:
-        raise ValueError(f"Unsupported bot type: {bot_type}")
-
-    return bot.handle_lambda_event(event, context)
-
 
 def lambda_handler(event, context):
     try:

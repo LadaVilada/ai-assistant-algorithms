@@ -1,7 +1,7 @@
 """Service for interacting with large language models."""
 
 import logging
-from typing import Optional
+from typing import Optional, List, Dict, AsyncGenerator
 
 from openai import OpenAI
 
@@ -20,8 +20,7 @@ class LLMService:
             model_name: Name of the LLM to use
         """
         self.model_name = model_name or config.model_name
-        self.api_key = config.openai_api_key
-        self.client = OpenAI(api_key=self.api_key)
+        self.client = OpenAI()
         logger.info(f"Using OpenAI model: {self.model_name}")
     
     def generate_completion(
@@ -68,3 +67,37 @@ class LLMService:
                 "I'm sorry, I encountered an error while generating a response. "
                 "Please try again later."
             )
+
+    async def get_streaming_response(
+        self,
+        messages: List[Dict[str, str]],
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None
+    ) -> AsyncGenerator[str, None]:
+        """
+        Get a streaming response from the LLM.
+        
+        Args:
+            messages: List of message dictionaries
+            temperature: Temperature for response generation
+            max_tokens: Maximum tokens to generate
+            
+        Yields:
+            String chunks of the response
+        """
+        try:
+            stream = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                stream=True
+            )
+            
+            for chunk in stream:
+                if chunk.choices[0].delta.content is not None:
+                    yield chunk.choices[0].delta.content
+                    
+        except Exception as e:
+            logger.error(f"Error in streaming response: {str(e)}")
+            raise

@@ -1,6 +1,6 @@
 """Retrieval-Augmented Generation chain for algorithm learning."""
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, AsyncGenerator, Generator
 
 from ai_assistant.core.services.embedding_service import EmbeddingService
 from ai_assistant.core.services.document_service import DocumentService
@@ -222,12 +222,12 @@ class RAGService:
 
         return "\n\n".join(context_parts)
 
-    def query(
+    async def query(
             self,
             query: str,
             llm_service=None,
             top_k: int = 3
-    ) -> Tuple[str, List[Dict[str, Any]]]:
+        ) -> AsyncGenerator[str, None]:
         """Process a query end-to-end.
 
         Args:
@@ -235,32 +235,45 @@ class RAGService:
             llm_service: LLM service instance (optional)
             top_k: Number of documents to retrieve
 
-        Returns:
-            Tuple of (response, retrieved_documents)
+        Yields:
+            String chunks of the streaming response
         """
         # Dynamic import to avoid circular imports
         if llm_service is None:
             from llm_service import LLMService
             llm_service = LLMService()
+        try:
+            # 1. Retrieve relevant documents
+            retrieved_docs = self.retrieve(query, top_k=top_k)
 
-        # 1. Retrieve relevant documents
-        retrieved_docs = self.retrieve(query, top_k=top_k)
+            # 2. Format documents into context
+            context = self.format_retrieved_context(retrieved_docs)
 
-        # 2. Format documents into context
-        context = self.format_retrieved_context(retrieved_docs)
+            # 3. Generate system message
+            system_message = (
+                "You are an algorithm learning assistant that provides accurate, "
+                "educational explanations about algorithms and data structures. "
+                "Base your response on the provided context when possible."
+            )
 
-        # 3. Generate system message
-        system_message = (
-            "You are an algorithm learning assistant that provides accurate, "
-            "educational explanations about algorithms and data structures. "
-            "Base your response on the provided context when possible."
-        )
+            # Prepare messages for LLM
+            messages = [
+                {"role": "system", "content":  system_message},
+                {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {query}"}
+            ]
 
-        # 4. Generate completion
-        prompt = f"{query}\n\nContext from reference materials:\n{context}"
-        response = llm_service.generate_completion(
-            prompt=prompt,
-            system_message=system_message
-        )
+            # 4. Generate completion
+            # prompt = f"{query}\n\nContext from reference materials:\n{context}"
+            # response = llm_service.generate_completion(
+            #     prompt=prompt,
+            #     system_message=system_message
+            # )
 
-        return response, retrieved_docs
+            # Get streaming response from LLM
+            async for chunk in llm_service.get_streaming_response(messages):
+                yield chunk
+
+            # return response, retrieved_docs
+        except Exception as e:
+            self.logger.error(f"Error in streaming RAG response: {str(e)}")
+            raise
