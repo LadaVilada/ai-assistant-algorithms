@@ -2,20 +2,21 @@
 
 import os
 from pathlib import Path
+from pydantic import BaseModel, Field
 
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field
+import os
 
 # Load environment variables
 load_dotenv()
 
-import os
 
 class AgentConfig(BaseModel):
     """Configuration for the Algorithm Learning Agent."""
     
     # API Keys and external services
     openai_api_key: str = Field(default=os.getenv("OPENAI_API_KEY", ""))
+    anthropic_api_key: str = Field(default=os.getenv("ANTHROPIC_API_KEY", ""))
     pinecone_api_key: str = Field(default=os.getenv("PINECONE_API_KEY", ""))
     pinecone_environment: str = Field(
         default=os.getenv("PINECONE_ENVIRONMENT", "")
@@ -29,7 +30,7 @@ class AgentConfig(BaseModel):
     
     # Storage paths
     pdf_storage_path: Path = Field(
-        default=Path(os.getenv("PDF_STORAGE_PATH", "./storage/data"))
+        default=Path(os.getenv("STORAGE_PATH", "./storage/data"))
     )
     
     # Vector database settings

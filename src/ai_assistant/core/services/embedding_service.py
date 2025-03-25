@@ -49,13 +49,7 @@ class EmbeddingService:
             )
 
         # Initialize OpenAI client
-        self.client = OpenAI(api_key=self.api_key)
-
-        # Initialize LangChain embedding model
-        self.embedding_model = OpenAIEmbeddings(
-            model=self.model_name,
-            api_key=SecretStr(self.api_key)
-        )
+        self.client = OpenAI()
 
         logger.info(f"Initialized embedding manager with model: {self.model_name}")
 

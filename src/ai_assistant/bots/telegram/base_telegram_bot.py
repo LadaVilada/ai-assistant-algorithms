@@ -77,7 +77,6 @@ class TelegramBot:
             # Format response for Telegram
             response_text = (
                 f"{result['response']}\n\n"
-                f"[Sources found: {len(result.get('sources', []))}]"
             )
             
             # Send response back to Telegram
@@ -110,54 +109,16 @@ class TelegramBot:
                 'body': json.dumps({'error': 'Internal server error'})
             }
 
-    async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle incoming Telegram messages."""
-        user_id = update.effective_user.id
-        query = update.message.text
-
-        # Handle 'sources' request
-        if query.lower() == 'sources' or query.lower() == '/sources':
-            if user_id in self.last_results:
-                sources_text = self.format_sources(self.last_results[user_id].get('sources', []))
-                await update.message.reply_text(sources_text)
-            else:
-                await update.message.reply_text("I don't have a previous answer to show sources for.")
-            return
-
-        # Process regular query
-        await update.message.reply_text("🔍 Searching for an answer...")
-
-        try:
-            # Use the underlying bot to process the query
-            result = self.bot.process_query(query)
-            self.logger.info(f"Processed message: {query}")
-            self.logger.info(f"RAG Query Result: {result}")
-
-            # Store result for potential sources request
-            self.last_results[user_id] = result
-
-            # Format and send response
-            response_text = (
-                f"{result['response']}\n\n"
-                f"[Sources found: {len(result.get('sources', []))}]"
-            )
-            await update.message.reply_text(response_text)
-
-        except Exception as e:
-            self.logger.error(f"Error processing message: {e}")
-            await update.message.reply_text(
-                "Sorry, an error occurred while processing your request. Please try again."
-            )
-
-    def format_sources(self, sources: list) -> str:
+    @staticmethod
+    def format_sources(sources: list) -> str:
         """Format sources for display."""
         if not sources:
             return "No sources available."
-        
+
         formatted_sources = []
         for i, source in enumerate(sources, 1):
             formatted_sources.append(f"{i}. {source}")
-        
+
         return "Sources:\n" + "\n".join(formatted_sources)
 
     async def start(self):
@@ -204,18 +165,59 @@ class TelegramBot:
             self.logger.error(f"Error running bot: {e}")
             raise
 
-    async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    @staticmethod
+    async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /start command."""
         await update.message.reply_text(
             "Hi! I'm your algorithm assistant. "
             "Ask me a question, and I'll help you find the answer."
         )
 
-    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    @staticmethod
+    async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /help command."""
         await update.message.reply_text(
             "I can help you with algorithm-related questions. "
             "Just ask your question, and I'll search through my knowledge base to find the answer.\n\n"
             "You can also use /sources to see the sources for my last answer."
         )
+
+    async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle incoming Telegram messages."""
+        user_id = update.effective_user.id
+        query = update.message.text
+
+        # Handle 'sources' request
+        if query.lower() == 'sources' or query.lower() == '/sources':
+            if user_id in self.last_results:
+                sources_text = self.format_sources(self.last_results[user_id].get('sources', []))
+                await update.message.reply_text(sources_text)
+            else:
+                await update.message.reply_text("I don't have a previous answer to show sources for.")
+            return
+
+        # Process regular query
+        await update.message.reply_text("🔍 Searching for an answer...")
+
+        try:
+            # Use the underlying bot to process the query
+            result = self.bot.process_query(query)
+            self.logger.info(f"Processed message: {query}")
+            self.logger.info(f"RAG Query Result: {result}")
+
+            # Store result for potential sources request
+            self.last_results[user_id] = result
+
+            # Format and send response
+            response_text = (
+                f"{result['response']}\n\n"
+            )
+            await update.message.reply_text(response_text)
+
+        except Exception as e:
+            self.logger.error(f"Error processing message: {e}")
+            await update.message.reply_text(
+                "Sorry, an error occurred while processing your request. Please try again."
+            )
+
 
