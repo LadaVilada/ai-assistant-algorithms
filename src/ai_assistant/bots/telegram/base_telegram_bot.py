@@ -10,10 +10,10 @@ from telegram.ext import (
     ContextTypes,
     filters
 )
+from telegram.constants import ChatAction
 
 from ai_assistant.bots.base.base_bot import BaseBot
 from ai_assistant.core.utils.logging import LoggingConfig
-from package.telegram.constants import ChatAction
 
 # Define conversation states
 AWAITING_QUERY = 1
