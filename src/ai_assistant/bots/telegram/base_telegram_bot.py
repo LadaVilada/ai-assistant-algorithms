@@ -43,6 +43,9 @@ class TelegramBot:
         self._update_interval = 0.5  # Assuming a default update_interval
         self.speech_service = SpeechService()
 
+        self._message_parts = []
+        self._current_part_index = 0
+
     async def handle_lambda_event(self, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         """
         Handle AWS Lambda events for Telegram webhook.
@@ -316,6 +319,12 @@ class TelegramBot:
                         parse_mode='HTML'
                     )
 
+                    # Final update if needed
+                    await self._update_message(context, chat_id)
+
+                    # Finalize messages with correct part numbering
+                    await self._finalize_messages(context, chat_id)
+
             except Exception as e:
                 self.logger.error(f"Error during streaming response: {str(e)}")
                 await self._handle_error(context, chat_id, str(e))
@@ -332,11 +341,12 @@ class TelegramBot:
             self.logger.error(f"Error handling message: {str(e)}")
             await self._handle_error(context, chat_id, str(e))
 
+
     async def _update_message(self, context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> None:
         """Update the message with rate limiting and error handling."""
         import time
         current_time = time.time()
-        
+
         # Check if enough time has passed since last update
         if current_time - self._last_update_time < self._update_interval:
             return
@@ -346,32 +356,138 @@ class TelegramBot:
             self.logger.warning("Attempted to update message with empty text")
             return
 
+        # Constants for Telegram limits
+        MAX_MESSAGE_LENGTH = 4000  # Using 4000 to be safe (actual limit is 4096)
+
         try:
             if not self._current_message:
-                # Create new message
-                self._current_message = await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=self._accumulated_text,
-                    parse_mode='HTML',
-                    disable_web_page_preview=True
-                )
+                # Check if text is going to be too long for a single message
+                if len(self._accumulated_text) > MAX_MESSAGE_LENGTH:
+                    # Initialize message parts tracking if not already done
+                    if not hasattr(self, '_message_parts'):
+                        self._message_parts = []
+                        self._current_part_index = 0
+
+                    # Send the first part
+                    first_part = self._accumulated_text[:MAX_MESSAGE_LENGTH]
+                    self._current_message = await context.bot.send_message(
+                        chat_id=chat_id,
+                        text=first_part,
+                        parse_mode='HTML',
+                        disable_web_page_preview=True
+                    )
+
+                    # Store this part
+                    self._message_parts.append({
+                        'message': self._current_message,
+                        'text': first_part
+                    })
+
+                    # Set up for next part
+                    self._accumulated_text = self._accumulated_text[MAX_MESSAGE_LENGTH:]
+                    self._current_part_index += 1
+                    self._current_message = None
+
+                    # Continue with the next part immediately
+                    await self._update_message(context, chat_id)
+                else:
+                    # If it fits in one message, just send it normally
+                    self._current_message = await context.bot.send_message(
+                        chat_id=chat_id,
+                        text=self._accumulated_text,
+                        parse_mode='HTML',
+                        disable_web_page_preview=True
+                    )
             else:
-                # Update existing message
-                await self._current_message.edit_text(
-                    text=self._accumulated_text,
-                    parse_mode='HTML',
-                    disable_web_page_preview=True
-                )
-            
+                # Check if the updated text will be too long
+                if len(self._accumulated_text) > MAX_MESSAGE_LENGTH:
+                    # If we haven't started tracking parts yet
+                    if not hasattr(self, '_message_parts'):
+                        self._message_parts = []
+                        self._current_part_index = 0
+
+                        # Add current message as first part
+                        self._message_parts.append({
+                            'message': self._current_message,
+                            'text': self._accumulated_text[:MAX_MESSAGE_LENGTH]
+                        })
+
+                        # Update the current message with the first part
+                        await self._current_message.edit_text(
+                            text=self._accumulated_text[:MAX_MESSAGE_LENGTH],
+                            parse_mode='HTML',
+                            disable_web_page_preview=True
+                        )
+
+                        # Set up for next part
+                        self._accumulated_text = self._accumulated_text[MAX_MESSAGE_LENGTH:]
+                        self._current_part_index += 1
+                        self._current_message = None
+
+                        # Continue with the next part immediately
+                        await self._update_message(context, chat_id)
+                    else:
+                        # We're already tracking parts, so update the current part
+                        # If we have a current message, update it
+                        if self._current_message:
+                            # Update with as much text as will fit
+                            update_text = self._accumulated_text[:MAX_MESSAGE_LENGTH]
+
+                            await self._current_message.edit_text(
+                                text=update_text,
+                                parse_mode='HTML',
+                                disable_web_page_preview=True
+                            )
+
+                            # Update part info
+                            if self._current_part_index < len(self._message_parts):
+                                self._message_parts[self._current_part_index]['text'] = update_text
+                            else:
+                                self._message_parts.append({
+                                    'message': self._current_message,
+                                    'text': update_text
+                                })
+
+                            # If there's still more text, set up for next part
+                            if len(self._accumulated_text) > MAX_MESSAGE_LENGTH:
+                                self._accumulated_text = self._accumulated_text[MAX_MESSAGE_LENGTH:]
+                                self._current_part_index += 1
+                                self._current_message = None
+
+                                # Continue with the next part immediately
+                                await self._update_message(context, chat_id)
+                else:
+                    # Text fits in current message, just update it
+                    await self._current_message.edit_text(
+                        text=self._accumulated_text,
+                        parse_mode='HTML',
+                        disable_web_page_preview=True
+                    )
+
             self._last_update_time = current_time
 
         except Exception as e:
             self.logger.error(f"Error updating message: {str(e)}")
             # Handle different types of errors
             if "Message is too long" in str(e):
-                # If message is too long, create a new one
+                # If message is too long, split it
+                if not hasattr(self, '_message_parts'):
+                    self._message_parts = []
+                    self._current_part_index = 0
+
+                # If we have a current message, add it to parts
+                if self._current_message and self._current_part_index == len(self._message_parts):
+                    self._message_parts.append({
+                        'message': self._current_message,
+                        'text': self._accumulated_text[:MAX_MESSAGE_LENGTH]
+                    })
+
+                # Move to the next part
+                self._accumulated_text = self._accumulated_text[MAX_MESSAGE_LENGTH:]
+                self._current_part_index += 1
                 self._current_message = None
-                self._accumulated_text = self._accumulated_text[:4000] + "..."
+
+                # Continue with the next part
                 await self._update_message(context, chat_id)
             elif "Message not modified" in str(e):
                 # Ignore this error as it's not critical
@@ -379,6 +495,99 @@ class TelegramBot:
             else:
                 # For other errors, try to recover
                 await self._handle_error(context, chat_id, str(e))
+
+async def _finalize_messages(self) -> None:
+    """Finalize messages after streaming is complete by updating part numbers."""
+    try:
+        # If we don't have message parts, nothing to do
+        if not hasattr(self, '_message_parts') or not self._message_parts:
+            return
+
+        # If we have a current message that's not in parts yet, add it
+        if self._current_message and self._accumulated_text:
+            self._message_parts.append({
+                'message': self._current_message,
+                'text': self._accumulated_text
+            })
+
+        # Update all parts with correct part numbers
+        total_parts = len(self._message_parts)
+
+        for i, part_info in enumerate(self._message_parts):
+            try:
+                message = part_info['message']
+                text = part_info['text']
+
+                # Add part numbers
+                if total_parts > 1:
+                    part_text = f"Part {i+1}/{total_parts}\n\n{text}"
+                else:
+                    part_text = text
+
+                # Update the message
+                await message.edit_text(
+                    text=part_text,
+                    parse_mode='HTML',
+                    disable_web_page_preview=True
+                )
+            except Exception as e:
+                self.logger.error(f"Error updating part {i+1}: {str(e)}")
+                # Continue with other parts even if one fails
+
+        # Clear the parts tracking
+        self._message_parts = []
+        self._current_part_index = 0
+
+    except Exception as e:
+        self.logger.error(f"Error finalizing messages: {str(e)}")
+
+    # async def _update_message(self, context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> None:
+    #     """Update the message with rate limiting and error handling."""
+    #     import time
+    #     current_time = time.time()
+    #
+    #     # Check if enough time has passed since last update
+    #     if current_time - self._last_update_time < self._update_interval:
+    #         return
+    #
+    #     # Don't update if text is empty
+    #     if not self._accumulated_text:
+    #         self.logger.warning("Attempted to update message with empty text")
+    #         return
+    #
+    #     try:
+    #         if not self._current_message:
+    #             # Create new message
+    #             self._current_message = await context.bot.send_message(
+    #                 chat_id=chat_id,
+    #                 text=self._accumulated_text,
+    #                 parse_mode='HTML',
+    #                 disable_web_page_preview=True
+    #             )
+    #         else:
+    #             # Update existing message
+    #             await self._current_message.edit_text(
+    #                 text=self._accumulated_text,
+    #                 parse_mode='HTML',
+    #                 disable_web_page_preview=True
+    #             )
+    #
+    #         self._last_update_time = current_time
+    #
+    #     except Exception as e:
+    #         self.logger.error(f"Error updating message: {str(e)}")
+    #         # Handle different types of errors
+    #         if "Message is too long" in str(e):
+    #             # If message is too long, create a new one
+    #             self._current_message = None
+    #             self._accumulated_text = self._accumulated_text[:4000] + "..."
+    #             await self._update_message(context, chat_id)
+    #         elif "Message not modified" in str(e):
+    #             # Ignore this error as it's not critical
+    #             pass
+    #         else:
+    #             # For other errors, try to recover
+    #             await self._handle_error(context, chat_id, str(e))
 
     async def _handle_error(self, context: ContextTypes.DEFAULT_TYPE, chat_id: int, error_msg: str = None) -> None:
         """Handle errors gracefully with detailed error messages."""
