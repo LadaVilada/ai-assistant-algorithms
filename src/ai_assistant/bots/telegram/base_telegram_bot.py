@@ -140,9 +140,10 @@ class TelegramBot:
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
         self.application.add_handler(MessageHandler(filters.VOICE, self.handle_voice_message))
         
-        # Initialize the application
+        # Start the bot
         await self.application.initialize()
         await self.application.start()
+        await self.application.run_polling(drop_pending_updates=True)
 
     async def stop(self):
         """Stop the Telegram bot gracefully."""
@@ -165,6 +166,7 @@ class TelegramBot:
             self.application.add_handler(CommandHandler("start", self.start_command))
             self.application.add_handler(CommandHandler("help", self.help_command))
             self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
+            self.application.add_handler(MessageHandler(filters.VOICE, self.handle_voice_message))
 
             # Use the application's run_polling method which manages its own event loop
             self.application.run_polling(drop_pending_updates=True)
@@ -208,29 +210,58 @@ class TelegramBot:
             user_id = str(message.from_user.id)
             username = message.from_user.username or "Anonymous"
 
-            # Log incoming voice message
+            # Log incoming voice message details
             self.logger.info(f"Received voice message from {username} (ID: {user_id})")
+            self.logger.info(f"Voice message details: duration={message.voice.duration}, file_size={message.voice.file_size}")
 
             # Send typing indicator
             await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
 
             # Get the voice file
             voice_file = await context.bot.get_file(message.voice.file_id)
-            
+            self.logger.info(f"Retrieved voice file: {voice_file.file_path}")
+
             # Create a temporary file to store the voice message
             with tempfile.NamedTemporaryFile(suffix='.ogg', delete=False) as temp_file:
-                await voice_file.download_to_drive(temp_file.name)
-                
+                temp_path = temp_file.name
+                self.logger.info(f"Created temporary file: {temp_path}")
+
                 try:
-                    # Transcribe the voice message
-                    transcribed_text = await self.speech_service.transcribe_audio(temp_file.name)
+                    # Download the voice file
+                    await voice_file.download_to_drive(temp_path)
+                    self.logger.info(f"Downloaded voice file to {temp_path}")
+
+                    # Verify file exists and has content
+                    if not os.path.exists(temp_path):
+                        raise FileNotFoundError(f"Temporary file {temp_path} was not created")
                     
+                    file_size = os.path.getsize(temp_path)
+                    self.logger.info(f"Voice file size: {file_size} bytes")
+
+                    if file_size == 0:
+                        raise ValueError("Downloaded voice file is empty")
+
+                    # Transcribe the voice message
+                    self.logger.info("Starting voice transcription...")
+                    transcribed_text = await self.speech_service.transcribe_audio(temp_path)
+                    self.logger.info(f"Transcribed text: {transcribed_text}")
+
+                    if not transcribed_text:
+                        raise ValueError("No text was transcribed from the voice message")
+
                     # Process the transcribed text
                     await self.handle_message(update, context, transcribed_text)
-                    
+
+                except Exception as e:
+                    self.logger.error(f"Error processing voice message: {str(e)}")
+                    await self._handle_error(context, chat_id, f"Error processing voice message: {str(e)}")
                 finally:
                     # Clean up the temporary file
-                    os.unlink(temp_file.name)
+                    try:
+                        os.unlink(temp_path)
+                        self.logger.info(f"Cleaned up temporary file: {temp_path}")
+                    except Exception as e:
+                        self.logger.error(f"Error cleaning up temporary file: {str(e)}")
 
         except Exception as e:
             self.logger.error(f"Error handling voice message: {str(e)}")
