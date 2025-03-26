@@ -81,6 +81,32 @@ class TelegramBot:
             await self.application.stop()
             await self.application.shutdown()
 
+    def run(self):
+        """
+        Run the bot in a completely synchronous manner.
+        This approach avoids all the asyncio event loop conflicts.
+        """
+        try:
+            self.logger.info("Starting Telegram bot...")
+
+            # Create a new application instance
+            self.application = Application.builder().token(self.token).build()
+
+            # Register handlers
+            self.application.add_handler(CommandHandler("start", self.start_command))
+            self.application.add_handler(CommandHandler("help", self.help_command))
+            self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
+            self.application.add_handler(MessageHandler(filters.VOICE, self.handle_voice_message))
+
+            # Use the application's run_polling method which manages its own event loop
+            self.application.run_polling(drop_pending_updates=True)
+
+        except KeyboardInterrupt:
+            self.logger.info("Bot stopped by user")
+        except Exception as e:
+            self.logger.error(f"Error running bot: {e}")
+            raise
+
     @staticmethod
     async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /start command."""
