@@ -143,6 +143,8 @@ class TelegramBot:
         # Start the bot
         await self.application.initialize()
         await self.application.start()
+
+        # Use the application's run_polling method which manages its own event loop
         await self.application.run_polling(drop_pending_updates=True)
 
     async def stop(self):
