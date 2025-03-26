@@ -1,20 +1,20 @@
 """Service for handling speech-to-text conversion using OpenAI's speech-to-text models."""
 import logging
 from typing import Optional
-from openai import OpenAI
+from openai import OpenAI, AsyncOpenAI
 from ai_assistant.core.utils.logging import LoggingConfig
 
 class SpeechService:
     """Service for handling speech-to-text conversion."""
 
-    def __init__(self, client: Optional[OpenAI] = None):
+    def __init__(self, client: Optional[AsyncOpenAI] = None):
         """Initialize the speech service.
         
         Args:
             client: Optional OpenAI client instance
         """
         self.logger = LoggingConfig.get_logger(__name__)
-        self.client = client or OpenAI()
+        self.client = client or AsyncOpenAI()
         self.logger.info("Speech Service initialized")
 
     async def transcribe_audio(self, audio_file_path: str, model: str = "gpt-4o-transcribe") -> str:
