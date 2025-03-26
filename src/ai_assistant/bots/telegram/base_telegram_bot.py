@@ -46,81 +46,6 @@ class TelegramBot:
         self._message_parts = []
         self._current_part_index = 0
 
-    async def handle_lambda_event(self, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-        """
-        Handle AWS Lambda events for Telegram webhook.
-        The method follows this flow:
-        Parse Lambda event → Extract Telegram message → 
-        Process with bot → Format response → Return to API Gateway
-        
-        Args:
-            event: AWS Lambda event containing Telegram update
-            context: AWS Lambda context
-            
-        Returns:
-            Dict containing response for API Gateway
-        """
-        try:
-            # Log the received event (sanitized)
-            self.logger.info(f"Received event type: {event.get('httpMethod', 'UNKNOWN')}")
-            
-            # Parse the Telegram update from the event
-            if 'body' not in event:
-                raise ValueError("No body in event")
-                
-            body = event['body']
-            if isinstance(body, str):
-                body = json.loads(body)
-                
-            # Extract message from update
-            if 'message' not in body:
-                raise ValueError("No message in Telegram update")
-                
-            message = body['message']
-            chat_id = message.get('chat', {}).get('id')
-            text = message.get('text', '')
-            
-            if not chat_id or not text:
-                raise ValueError("Missing chat_id or text in message")
-                
-            # Process the message using the underlying bot
-            result = await self.bot.process_query(text)
-            
-            # Format response for Telegram
-            response_text = (
-                f"{result['response']}\n\n"
-            )
-            
-            # Send response back to Telegram
-            telegram_response = {
-                'method': 'sendMessage',
-                'chat_id': chat_id,
-                'text': response_text,
-                'parse_mode': 'Markdown'
-            }
-            
-            # Store result for potential sources request
-            self.last_results[chat_id] = result
-            
-            return {
-                'statusCode': 200,
-                'headers': {'Content-Type': 'application/json'},
-                'body': json.dumps(telegram_response)
-            }
-            
-        except ValueError as ve:
-            self.logger.error(f"Validation error: {ve}")
-            return {
-                'statusCode': 400,
-                'body': json.dumps({'error': str(ve)})
-            }
-        except Exception as e:
-            self.logger.error(f"Error processing Telegram update: {e}")
-            return {
-                'statusCode': 500,
-                'body': json.dumps({'error': 'Internal server error'})
-            }
-
     @staticmethod
     def format_sources(sources: list) -> str:
         """Format sources for display."""
@@ -155,32 +80,6 @@ class TelegramBot:
         if self.application:
             await self.application.stop()
             await self.application.shutdown()
-
-    def run(self):
-        """
-        Run the bot in a completely synchronous manner.
-        This approach avoids all the asyncio event loop conflicts.
-        """
-        try:
-            self.logger.info("Starting Telegram bot...")
-
-            # Create a new application instance
-            self.application = Application.builder().token(self.token).build()
-
-            # Register handlers
-            self.application.add_handler(CommandHandler("start", self.start_command))
-            self.application.add_handler(CommandHandler("help", self.help_command))
-            self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
-            self.application.add_handler(MessageHandler(filters.VOICE, self.handle_voice_message))
-
-            # Use the application's run_polling method which manages its own event loop
-            self.application.run_polling(drop_pending_updates=True)
-
-        except KeyboardInterrupt:
-            self.logger.info("Bot stopped by user")
-        except Exception as e:
-            self.logger.error(f"Error running bot: {e}")
-            raise
 
     @staticmethod
     async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
