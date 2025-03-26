@@ -1,5 +1,7 @@
 import asyncio
 import json
+import os
+import tempfile
 from typing import Dict, Any
 
 from telegram import Update
@@ -14,6 +16,7 @@ from telegram.constants import ChatAction
 
 from ai_assistant.bots.base.base_bot import BaseBot
 from ai_assistant.core.utils.logging import LoggingConfig
+from ai_assistant.core.services.speech_service import SpeechService
 
 # Define conversation states
 AWAITING_QUERY = 1
@@ -38,6 +41,7 @@ class TelegramBot:
         self._current_message = None
         self._last_update_time = 0.0
         self._update_interval = 0.5  # Assuming a default update_interval
+        self.speech_service = SpeechService()
 
     async def handle_lambda_event(self, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         """
@@ -134,6 +138,7 @@ class TelegramBot:
         self.application.add_handler(CommandHandler("start", self.start_command))
         self.application.add_handler(CommandHandler("help", self.help_command))
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
+        self.application.add_handler(MessageHandler(filters.VOICE, self.handle_voice_message))
         
         # Initialize the application
         await self.application.initialize()
@@ -180,17 +185,58 @@ class TelegramBot:
             "let's tackle them one piece at a time. Keep coding, keep learning, and let's build something great! 🚀"
         )
 
-
     @staticmethod
     async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /help command."""
         await update.message.reply_text(
             "I can help you with algorithm-related questions. "
             "Just ask your question, and I'll search through my knowledge base to find the answer.\n\n"
+            "You can send your questions as text or voice messages.\n"
             "You can also use /sources to see the sources for my last answer."
         )
 
-    async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def handle_voice_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle incoming voice messages."""
+        try:
+            message = update.message
+            if not message or not message.voice:
+                self.logger.warning("Received update without voice message")
+                return
+
+            # Get chat ID and user info
+            chat_id = message.chat_id
+            user_id = str(message.from_user.id)
+            username = message.from_user.username or "Anonymous"
+
+            # Log incoming voice message
+            self.logger.info(f"Received voice message from {username} (ID: {user_id})")
+
+            # Send typing indicator
+            await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+
+            # Get the voice file
+            voice_file = await context.bot.get_file(message.voice.file_id)
+            
+            # Create a temporary file to store the voice message
+            with tempfile.NamedTemporaryFile(suffix='.ogg', delete=False) as temp_file:
+                await voice_file.download_to_drive(temp_file.name)
+                
+                try:
+                    # Transcribe the voice message
+                    transcribed_text = await self.speech_service.transcribe_audio(temp_file.name)
+                    
+                    # Process the transcribed text
+                    await self.handle_message(update, context, transcribed_text)
+                    
+                finally:
+                    # Clean up the temporary file
+                    os.unlink(temp_file.name)
+
+        except Exception as e:
+            self.logger.error(f"Error handling voice message: {str(e)}")
+            await self._handle_error(context, chat_id, str(e))
+
+    async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str = None):
         """Handle incoming messages with streaming support."""
         try:
             message = update.message
@@ -198,7 +244,9 @@ class TelegramBot:
                 self.logger.warning("Received update without message")
                 return
 
-            if not message.text:
+            # Use provided text or get from message
+            message_text = text or message.text
+            if not message_text:
                 self.logger.warning("Received message without text")
                 return
 
@@ -208,7 +256,7 @@ class TelegramBot:
             username = message.from_user.username or "Anonymous"
 
             # Log incoming message
-            self.logger.info(f"Received message from {username} (ID: {user_id}): {message.text}")
+            self.logger.info(f"Received message from {username} (ID: {user_id}): {message_text}")
 
             # Send typing indicator
             await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
@@ -221,7 +269,7 @@ class TelegramBot:
             # Process the message and get streaming response
             try:
                 # Stream response directly without awaiting
-                async for chunk in self.bot.stream_response(message.text):
+                async for chunk in self.bot.stream_response(message_text):
                     if chunk:  # Only process non-empty chunks
                         self._accumulated_text += chunk
                         
