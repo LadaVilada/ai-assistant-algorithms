@@ -1,10 +1,9 @@
-import asyncio
-import json
 import os
 import tempfile
-from typing import Dict, Any
+import re
 
 from telegram import Update
+from telegram.constants import ChatAction
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -12,11 +11,10 @@ from telegram.ext import (
     ContextTypes,
     filters
 )
-from telegram.constants import ChatAction
 
 from ai_assistant.bots.base.base_bot import BaseBot
-from ai_assistant.core.utils.logging import LoggingConfig
 from ai_assistant.core.services.speech_service import SpeechService
+from ai_assistant.core.utils.logging import LoggingConfig
 
 # Define conversation states
 AWAITING_QUERY = 1
@@ -32,6 +30,7 @@ class TelegramBot:
             token: Telegram bot token
             underlying_bot: The bot implementation that handles the core logic
         """
+        self._has_formatting_error = False  # Track if we encountered formatting errors
         self.token = token
         self.bot = underlying_bot
         self.application = None
@@ -44,8 +43,12 @@ class TelegramBot:
         self._update_interval = 0.5  # Assuming a default update_interval
         self.speech_service = SpeechService()
 
+        # Initialize message parts for splitting long messages
         self._message_parts = []
         self._current_part_index = 0
+
+        # Track last sent text to avoid redundant edits
+        self._last_sent_text = ""
 
     @staticmethod
     def format_sources(sources: list) -> str:
@@ -100,6 +103,7 @@ class TelegramBot:
             self.application.add_handler(MessageHandler(filters.VOICE, self.handle_voice_message))
 
             # Use the application's run_polling method which manages its own event loop
+            # Run polling (blocks until stopped)
             self.application.run_polling(drop_pending_updates=True)
 
         except KeyboardInterrupt:
@@ -115,7 +119,8 @@ class TelegramBot:
             "👋 Welcome! I'm your AI-powered algorithm assistant. "
             "Complex problems? No worries—I'll help you break them down into simple, "
             "logical steps. Whether it's data structures, coding challenges, or algorithm design, "
-            "let's tackle them one piece at a time. Keep coding, keep learning, and let's build something great! 🚀"
+            "let's tackle them one piece at a time. Keep coding, keep learning, and let's build something great! 🚀",
+            parse_mode='MarkdownV2'
         )
 
     @staticmethod
@@ -125,7 +130,8 @@ class TelegramBot:
             "I can help you with algorithm-related questions. "
             "Just ask your question, and I'll search through my knowledge base to find the answer.\n\n"
             "You can send your questions as text or voice messages.\n"
-            "You can also use /sources to see the sources for my last answer."
+            "You can also use /sources to see the sources for my last answer.",
+            parse_mode='MarkdownV2'
         )
 
     async def handle_voice_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -180,7 +186,7 @@ class TelegramBot:
                     if not transcribed_text:
                         raise ValueError("No text was transcribed from the voice message")
 
-                    # Process the transcribed text
+                    # Process the transcribed file as a regular message
                     await self.handle_message(update, context, transcribed_text)
 
                 except Exception as e:
@@ -199,7 +205,7 @@ class TelegramBot:
             await self._handle_error(context, chat_id, str(e))
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str = None):
-        """Handle incoming messages with streaming support."""
+        """Handle incoming messages with streaming support and Markdown formatting."""
         try:
             message = update.message
             if not message:
@@ -220,7 +226,7 @@ class TelegramBot:
             # Log incoming message
             self.logger.info(f"Received message from {username} (ID: {user_id}): {message_text}")
 
-            # Send typing indicator
+            # Indicate bot is typing
             await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
 
             # Reset state for new message
@@ -228,60 +234,58 @@ class TelegramBot:
             self._raw_accumulated_text = ""
             self._current_message = None
             self._last_update_time = 0.0
+            self._has_formatting_error = False
+            self._last_sent_text = ""
 
-            # Process the message and get streaming response
+            # Stream the response from the underlying bot and send it incrementally
             try:
-                # Stream response directly without awaiting
                 async for chunk in self.bot.stream_response(message_text):
                     if chunk:  # Only process non-empty chunks
                         self._raw_accumulated_text += chunk
 
-                        # Try to format with HTML, store raw text as backup
-                        self._accumulated_text = self._format_for_telegram_html(self._raw_accumulated_text)
+                        # Apply Markdown formatting if no formatting errors have occurred
+                        if not self._has_formatting_error:
+                            try:
+                                self._accumulated_text = self._format_for_markdown(self._raw_accumulated_text)
+                            except Exception as e:
+                                # On formatting error, switch to escaping text (no rich formatting)
+                                self.logger.error(f"Markdown formatting error: {e}")
+                                self._has_formatting_error = True
+                                self._accumulated_text = self.escape_markdown(self._raw_accumulated_text)
+                        else:
+                            # If a formatting error was encountered, use escaped raw text for updates
+                            self._accumulated_text = self.escape_markdown(self._raw_accumulated_text)
 
-                        # Update message with rate limiting
+                        # Update the message in Telegram (with rate limiting)
                         await self._update_message(context, chat_id)
 
-                # Final update to ensure all text is shown
+                # After streaming is done, ensure the final state of the message is sent
                 if self._current_message:
                     try:
-                        # Try one last time with full HTML formatting
-                        final_formatted_text = self._format_for_telegram_html(self._raw_accumulated_text)
-
-                        await self._current_message.edit_text(
-                            text=final_formatted_text,
-                            parse_mode='HTML',
-                            disable_web_page_preview=True
-                        )
+                        final_text = (self._format_for_markdown(self._raw_accumulated_text)
+                                      if not self._has_formatting_error
+                                      else self.escape_markdown(self._raw_accumulated_text))
+                        # Avoid sending an identical final update
+                        if final_text != self._last_sent_text:
+                            await self._current_message.edit_text(
+                                text=final_text,
+                                parse_mode='MarkdownV2',
+                                disable_web_page_preview=True
+                            )
+                            self._last_sent_text = final_text
                     except Exception as e:
                         error_msg = str(e)
-                        self.logger.error(f"Error in final HTML formatting: {error_msg}")
+                        self.logger.error(f"Error in final message update: {error_msg}")
+                        # Fallback: try sending raw text without Markdown formatting
+                        try:
+                            await self._current_message.edit_text(
+                                text=self._raw_accumulated_text,
+                                disable_web_page_preview=True
+                            )
+                        except Exception as e2:
+                            self.logger.error(f"Failed to send final message without formatting: {e2}")
 
-                        # If HTML parsing fails, try with plain text
-                        if "Can't parse entities" in error_msg:
-                            try:
-                                # Extract code blocks and send them separately
-                                await self.format_and_send_code_blocks(context, chat_id, self._raw_accumulated_text)
-
-                                # Update the original message with simplified text (code blocks removed)
-                                import re
-                                simplified_text = re.sub(r'```(?:\w+)?[\n\r]+[\s\S]+?[\n\r]+```',
-                                                         '[Code block sent separately]',
-                                                         self._raw_accumulated_text)
-
-                                await self._current_message.edit_text(
-                                    text=simplified_text,
-                                    disable_web_page_preview=True
-                                )
-                            except Exception as e2:
-                                self.logger.error(f"Error in fallback formatting: {str(e2)}")
-                                # Last resort: just send as plain text
-                                await self._current_message.edit_text(
-                                    text=self._raw_accumulated_text,
-                                    disable_web_page_preview=True
-                                )
-
-                # Finalize messages with correct part numbering
+                # Finalize multi-part messages by adding part numbers if needed
                 await self._finalize_messages()
 
             except Exception as e:
@@ -292,6 +296,7 @@ class TelegramBot:
             # Clear state
             self._current_message = None
             self._accumulated_text = ""
+            self._raw_accumulated_text = ""
 
             # Log successful response
             self.logger.info(f"Successfully processed message for {username} (ID: {user_id})")
@@ -307,6 +312,7 @@ class TelegramBot:
         current_time = time.time()
 
         # Check if enough time has passed since last update
+        # Rate limit updates to avoid flooding
         if current_time - self._last_update_time < self._update_interval:
             return
 
@@ -320,19 +326,19 @@ class TelegramBot:
 
         try:
             if not self._current_message:
-                # Check if text is going to be too long for a single message
+                # If no message sent yet, send a new message (or first part of a long message)
                 if len(self._accumulated_text) > MAX_MESSAGE_LENGTH:
-                    # Initialize message parts tracking if not already done
-                    if not hasattr(self, '_message_parts'):
+                    # Start splitting into multiple messages if not already doing so
+                    if not self._message_parts:
                         self._message_parts = []
                         self._current_part_index = 0
 
-                    # Send the first part
+                    # Send the first part of the message
                     first_part = self._accumulated_text[:MAX_MESSAGE_LENGTH]
                     self._current_message = await context.bot.send_message(
                         chat_id=chat_id,
                         text=first_part,
-                        parse_mode='HTML',
+                        parse_mode='MarkdownV2',
                         disable_web_page_preview=True
                     )
 
@@ -350,18 +356,18 @@ class TelegramBot:
                     # Continue with the next part immediately
                     await self._update_message(context, chat_id)
                 else:
-                    # If it fits in one message, just send it normally
+                    # If it fits in one message/part, just send it normally
                     self._current_message = await context.bot.send_message(
                         chat_id=chat_id,
                         text=self._accumulated_text,
-                        parse_mode='HTML',
+                        parse_mode='MarkdownV2',
                         disable_web_page_preview=True
                     )
             else:
-                # Check if the updated text will be too long
+                # A message (or part) already exists, update it
                 if len(self._accumulated_text) > MAX_MESSAGE_LENGTH:
-                    # If we haven't started tracking parts yet
-                    if not hasattr(self, '_message_parts'):
+                    # If the current message now exceeds the limit, split into parts
+                    if not self._message_parts:
                         self._message_parts = []
                         self._current_part_index = 0
 
@@ -371,12 +377,16 @@ class TelegramBot:
                             'text': self._accumulated_text[:MAX_MESSAGE_LENGTH]
                         })
 
-                        # Update the current message with the first part
-                        await self._current_message.edit_text(
-                            text=self._accumulated_text[:MAX_MESSAGE_LENGTH],
-                            parse_mode='HTML',
-                            disable_web_page_preview=True
-                        )
+                        # Edit the current message to contain only the first part
+                        part_text = self._accumulated_text[:MAX_MESSAGE_LENGTH]
+                        if part_text != self._message_parts[0]['text']:
+                            await self._current_message.edit_text(
+                                text=part_text,
+                                parse_mode='MarkdownV2',
+                                disable_web_page_preview=True
+                            )
+                            # Update stored text for part 0
+                            self._message_parts[0]['text'] = part_text
 
                         # Set up for next part
                         self._accumulated_text = self._accumulated_text[MAX_MESSAGE_LENGTH:]
@@ -392,13 +402,16 @@ class TelegramBot:
                             # Update with as much text as will fit
                             update_text = self._accumulated_text[:MAX_MESSAGE_LENGTH]
 
-                            await self._current_message.edit_text(
-                                text=update_text,
-                                parse_mode='HTML',
-                                disable_web_page_preview=True
-                            )
+                            # Only edit if there's a change
+                            current_part = self._message_parts[self._current_part_index] if self._current_part_index < len(self._message_parts) else None
+                            if current_part is None or update_text != current_part.get('text', ''):
+                                await self._current_message.edit_text(
+                                    text=update_text,
+                                    parse_mode='MarkdownV2',
+                                    disable_web_page_preview=True
+                                )
 
-                            # Update part info
+                            # Update or append this part's text
                             if self._current_part_index < len(self._message_parts):
                                 self._message_parts[self._current_part_index]['text'] = update_text
                             else:
@@ -416,112 +429,115 @@ class TelegramBot:
                                 # Continue with the next part immediately
                                 await self._update_message(context, chat_id)
                 else:
-                    # Text fits in current message, just update it
-                    await self._current_message.edit_text(
-                        text=self._accumulated_text,
-                        parse_mode='HTML',
-                        disable_web_page_preview=True
-                    )
+                    # Text fits in the current message part
+                    if not self._message_parts:
+                        # Single message scenario
+                        if self._accumulated_text != self._last_sent_text:
+                            # Text fits in current message, just update it
+                            await self._current_message.edit_text(
+                                text=self._accumulated_text,
+                                parse_mode='MarkdownV2',
+                                disable_web_page_preview=True
+                            )
+                            self._last_sent_text = self._accumulated_text
+                    else:
+                        # We have parts but the latest text fits in the current part (no new part needed)
+                        if self._accumulated_text != self._message_parts[self._current_part_index]['text']:
+                            await self._current_message.edit_text(
+                                text=self._accumulated_text,
+                                parse_mode='MarkdownV2',
+                                disable_web_page_preview=True
+                            )
+                            # Update stored text for this part
+                            self._message_parts[self._current_part_index]['text'] = self._accumulated_text
 
             self._last_update_time = current_time
 
         except Exception as e:
-            self.logger.error(f"Error updating message: {str(e)}")
-            # Handle different types of errors
-            if "Message is too long" in str(e):
-                # If message is too long, split it
-                if not hasattr(self, '_message_parts'):
+            self.logger.error(f"Error updating message: {e}")
+            error_str = str(e)
+            if "Message is too long" in error_str:
+                # If message still too long, continue splitting
+                if not self._message_parts:
                     self._message_parts = []
                     self._current_part_index = 0
-
-                # If we have a current message, add it to parts
                 if self._current_message and self._current_part_index == len(self._message_parts):
+                    # Add current message as a part if not already listed
                     self._message_parts.append({
                         'message': self._current_message,
                         'text': self._accumulated_text[:MAX_MESSAGE_LENGTH]
                     })
-
-                # Move to the next part
+                # Move to next part
                 self._accumulated_text = self._accumulated_text[MAX_MESSAGE_LENGTH:]
                 self._current_part_index += 1
                 self._current_message = None
-
-                # Continue with the next part
                 await self._update_message(context, chat_id)
-            elif "Message not modified" in str(e):
-                # Ignore this error as it's not critical
-                pass
+            elif "Message is not modified" in error_str or "message is not modified" in error_str.lower():
+                # Gracefully ignore "not modified" errors
+                self.logger.info(f"Ignoring 'Message not modified' error during update.")
             else:
-                # For other errors, try to recover
-                await self._handle_error(context, chat_id, str(e))
+                # For other errors, use the generic error handler
+                await self._handle_error(context, chat_id, error_str)
 
 
-    async def _handle_error(self, context: ContextTypes.DEFAULT_TYPE, chat_id: int, error_msg: str = None) -> None:
-        """Handle errors gracefully with detailed error messages."""
+        async def _handle_error(self, context: ContextTypes.DEFAULT_TYPE, chat_id: int, error_msg: str = None) -> None:
+            """Handle errors gracefully by sending an error message to the user."""
+            # Skip trivial "not modified" errors
+            if error_msg and ("message is not modified" in error_msg.lower()):
+                self.logger.info(f"Ignoring message not modified error: {error_msg}")
+                return
 
-        # Don't show Telegram API errors to users
-        if error_msg and ("Message not modified" in error_msg or "message is not modified" in error_msg.lower()):
-            # Just log this error, don't show to user
-            self.logger.info(f"Ignoring message not modified error: {error_msg}")
-            return
-
-        # For other errors, create a user-friendly message
-        error_message = (
-            "Sorry, I encountered an error processing your message.\n"
-            "Please try again or rephrase your question.\n"
-        )
-
-        # Only add technical details for non-Telegram API errors
-        if error_msg and not any(x in error_msg.lower() for x in ["telegram", "message", "bot", "chat"]):
-            error_message += f"\nError: {error_msg}"
-
-        try:
-            if self._current_message:
-                await self._current_message.edit_text(
-                    text=error_message,
-                    parse_mode='HTML'
-                )
-            else:
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=error_message,
-                    parse_mode='HTML'
-                )
-        except Exception as e:
-            self.logger.error(f"Error sending error message: {str(e)}")
-            # Fallback to plain text if HTML parsing fails
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=error_message
+            # Generic user-facing error message
+            error_message = (
+                "Sorry, I encountered an error processing your message.\n"
+                "Please try again or rephrase your question."
             )
+            # Include technical details for non-Telegram errors
+            if error_msg and not any(word in error_msg.lower() for word in ["telegram", "message", "bot", "chat"]):
+                error_message += f"\n\nError: {error_msg}"
 
+            try:
+                if self._current_message:
+                    await self._current_message.edit_text(text=error_message, parse_mode='MarkdownV2')
+                else:
+                    await context.bot.send_message(chat_id=chat_id, text=error_message, parse_mode='MarkdownV2')
+            except Exception as e:
+                self.logger.error(f"Error sending error message: {e}")
+                # Fallback to plain text if Markdown formatting fails for the error message
+                await context.bot.send_message(chat_id=chat_id, text=error_message)
 
     async def format_and_send_code_blocks(self, context, chat_id, text):
         """Extract code blocks from text and send them separately with proper formatting"""
-        import re
-        code_pattern = r'```(?:\w+)?[\n\r]+([\s\S]+?)[\n\r]+```'
-        code_blocks = re.findall(code_pattern, text)
+        # More flexible pattern to catch different code block variations
+        code_pattern = r'```(?:(?P<lang>\w+)?)?\s*\n([\s\S]+?)\n\s*```'
+
+        matches = re.finditer(code_pattern, text)
+        code_blocks = [(m.group('lang') or '', m.group(2)) for m in matches]
 
         if not code_blocks:
             return
 
         # For each code block found
-        for i, code in enumerate(code_blocks):
+        for i, (lang, code) in enumerate(code_blocks):
             try:
                 # First try using standard Markdown which is more reliable than MarkdownV2
-                header = f"Code block {i+1}/{len(code_blocks)}:"
-                formatted_message = f"{header}\n\n```\n{code}\n```"
+                header = f"Code block {i+1}/{len(code_blocks)}"
+                if lang:
+                    header += f" ({lang})"
+
+                formatted_message = f"{header}:\n\n```\n{code}\n```"
 
                 await context.bot.send_message(
                     chat_id=chat_id,
                     text=formatted_message,
-                    parse_mode='Markdown'  # Use standard Markdown
+                    parse_mode='MarkdownV2'  # Use standard Markdown
                 )
             except Exception as e:
                 self.logger.error(f"Error sending formatted code block: {str(e)}")
                 # Fallback to plain text with no parsing
                 try:
-                    plain_message = f"Code block {i+1}/{len(code_blocks)}:\n\n{code}"
+                    lang_info = f" ({lang})" if lang else ""
+                    plain_message = f"Code block {i+1}/{len(code_blocks)}{lang_info}:\n\n{code}"
                     await context.bot.send_message(
                         chat_id=chat_id,
                         text=plain_message
@@ -529,89 +545,155 @@ class TelegramBot:
                 except Exception as e2:
                     self.logger.error(f"Error sending plain code block: {str(e2)}")
 
-    def _format_for_telegram_html(self, text):
+    @staticmethod
+    def _escape_html(text):
         """
-        Format text with Telegram-compatible HTML tags with robust error handling.
-        Handles code blocks by properly escaping HTML special characters including equals signs.
+        Escape HTML special characters comprehensively.
+        This is extracted to a separate method for clarity and reuse.
         """
-        import re
+        replacements = [
+            ('&', '&amp;'),  # Must be first to avoid double-escaping
+            ('<', '&lt;'),
+            ('>', '&gt;'),
+            ('=', '&equals;'),
+            ('"', '&quot;'),
+            ("'", '&#39;')
+        ]
 
-        # Find code blocks (text between triple backticks)
-        code_pattern = r'```(?:\w+)?[\n\r]+([\s\S]+?)[\n\r]+```'
+        for old, new in replacements:
+            text = text.replace(old, new)
 
-        def replace_code_block(match):
-            code = match.group(1)
-            # Escape HTML special characters
-            code = code.replace('&', '&amp;')
-            code = code.replace('<', '&lt;')
-            code = code.replace('>', '&gt;')
-            # Extra explicit escaping for equals signs
-            code = code.replace('=', '&equals;')
-            # Use simple <pre> tag which is supported by Telegram
-            return f'<pre>{code}</pre>'
+        return text
 
-        # Replace code blocks with properly escaped HTML
-        formatted = re.sub(code_pattern, replace_code_block, text)
 
-        # Also handle inline code
-        inline_code_pattern = r'`([^`]+)`'
+    @staticmethod
+    def escape_markdown(text: str) -> str:
+        """Escape all special characters in text for MarkdownV2."""
+        # First, escape backslashes
+        text = text.replace("\\", "\\\\")
+        # Escape all other MarkdownV2 special characters
+        escape_chars = r'_*\[\]()~`>#+-=|{}.!'
+        return re.sub(f'([{re.escape(escape_chars)}])', r'\\\1', text)
 
-        def replace_inline_code(match):
-            code = match.group(1)
-            # Escape HTML special characters
-            code = code.replace('&', '&amp;')
-            code = code.replace('<', '&lt;')
-            code = code.replace('>', '&gt;')
-            code = code.replace('=', '&equals;')
-            return f'<code>{code}</code>'
+    @staticmethod
+    def detect_code_language(code: str) -> str:
+        """Very basic heuristic to detect code language."""
+        if any(keyword in code for keyword in ["public static void", "System.out.println", "class", "int"]):
+            return "java"
+        elif any(keyword in code for keyword in ["def", "print", "self", "import"]):
+            return "python"
+        return ""
 
-        formatted = re.sub(inline_code_pattern, replace_inline_code, formatted)
+    @staticmethod
+    def _format_for_markdown(text: str) -> str:
+        """
+        Format the text for Telegram MarkdownV2:
+        - Preserve code blocks and inline code with proper Markdown syntax.
+        - Escape other special characters.
+        """
+        # Pattern to match triple backtick code blocks (with optional language specifier)
+        code_pattern = r'```(?:(?P<lang>\w+)?\s*\n)?([\s\S]+?)\n\s*```'
+        code_blocks = []
+        result = ""
+        last_end = 0
 
-        return formatted
+        for match in re.finditer(code_pattern, text):
+            code_blocks.append(match.group(2))
+            start, end = match.span()
+            result += text[last_end:start] + f"PHCODEBLOCK{len(code_blocks)-1}"
+            last_end = end
+        result += text[last_end:]
 
+        indent_blocks = []
+        indent_positions = []
+        lines = result.splitlines(keepends=True)
+        i = 0
+        while i < len(lines):
+            if lines[i].startswith("    ") or lines[i].startswith("\t"):
+                start_line = i
+                code_lines = []
+                while i < len(lines) and (lines[i].startswith("    ") or lines[i].startswith("\t")):
+                    if lines[i].startswith("\t"):
+                        code_line = lines[i][1:]
+                    else:
+                        code_line = lines[i][4:] if lines[i].startswith("    ") else lines[i]
+                    code_lines.append(code_line)
+                    i += 1
+                block_text = "".join(code_lines)
+                indent_blocks.append(block_text)
+                char_start = sum(len(l) for l in lines[:start_line])
+                char_end = char_start + sum(len(l) for l in lines[start_line:i])
+                indent_positions.append((char_start, char_end))
+            else:
+                i += 1
+
+        if indent_positions:
+            new_result = ""
+            last_idx = 0
+            for j, (start, end) in enumerate(indent_positions):
+                new_result += result[last_idx:start] + f"PHCODEBLOCK{len(code_blocks) + j}"
+                last_idx = end
+            new_result += result[last_idx:]
+            result = new_result
+            code_blocks.extend(indent_blocks)
+
+        inline_blocks = []
+        inline_positions = []
+        for match in re.finditer(r'`([^`]+)`', result):
+            inline_blocks.append(match.group(1))
+            inline_positions.append(match.span())
+        if inline_positions:
+            new_result = ""
+            last_idx = 0
+            for k, (start, end) in enumerate(inline_positions):
+                new_result += result[last_idx:start] + f"PHINLINE{k}"
+                last_idx = end
+            new_result += result[last_idx:]
+            result = new_result
+
+        result = TelegramBot.escape_markdown(result)
+
+        for k in range(len(inline_blocks) - 1, -1, -1):
+            content = inline_blocks[k].replace("\\", "\\\\")
+            result = result.replace(f"PHINLINE{k}", f"`{content}`")
+
+        for j in range(len(code_blocks) - 1, -1, -1):
+            code_text = code_blocks[j].replace("\\", "\\\\").replace("`", "\\`")
+            lang = TelegramBot.detect_code_language(code_text)
+            lang_header = f"{lang}" if lang else ""
+            result = result.replace(f"PHCODEBLOCK{j}", f"```{lang_header}\n{code_text}\n```")
+
+        return result
 
     async def _finalize_messages(self) -> None:
-        """Finalize messages after streaming is complete by updating part numbers."""
+        """Add part numbers to split messages after streaming is complete."""
         try:
             # If we don't have message parts, nothing to do
-            if not hasattr(self, '_message_parts') or not self._message_parts:
+            if not self._message_parts or len(self._message_parts) == 0:
                 return
 
-            # If we have a current message that's not in parts yet, add it
-            if self._current_message and self._accumulated_text:
-                self._message_parts.append({
-                    'message': self._current_message,
-                    'text': self._accumulated_text
-                })
-
-            # Update all parts with correct part numbers
             total_parts = len(self._message_parts)
+            if total_parts <= 1:
+                # Only one part, no need to add part number
+                return
 
             for i, part_info in enumerate(self._message_parts):
                 try:
                     message = part_info['message']
                     text = part_info['text']
-
-                    # Add part numbers
-                    if total_parts > 1:
-                        part_text = f"Part {i+1}/{total_parts}\n\n{text}"
-                    else:
-                        part_text = text
-
-                    # Update the message
+                    part_text = f"Part {i+1}/{total_parts}\n\n{text}"
                     await message.edit_text(
                         text=part_text,
-                        parse_mode='HTML',
+                        parse_mode='MarkdownV2',
                         disable_web_page_preview=True
                     )
                 except Exception as e:
-                    self.logger.error(f"Error updating part {i+1}: {str(e)}")
-                    # Continue with other parts even if one fails
-
-            # Clear the parts tracking
+                    self.logger.error(f"Error updating part {i+1}: {e}")
+                    # Continue to next part even if one fails
+            # Clear parts tracking for next message
             self._message_parts = []
             self._current_part_index = 0
 
         except Exception as e:
-            self.logger.error(f"Error finalizing messages: {str(e)}")
+            self.logger.error(f"Error finalizing messages: {e}")
 

@@ -109,10 +109,10 @@ class AlgorithmsBot(BaseBot):
             String chunks of the streaming response
         """
         try:
-            # Get retrieved documents first
+            # Get retrieved documents first (to possibly guide the LLM)
             retrieved_docs = self.rag_service.retrieve(query, top_k=3)
             
-            # Stream response from RAG service
+            # Stream response from the LLM via RAG service
             async for chunk in self.rag_service.query(query, self.llm_service):
                 yield chunk
         except Exception as e:

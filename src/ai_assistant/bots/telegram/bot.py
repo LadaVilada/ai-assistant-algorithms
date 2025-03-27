@@ -65,10 +65,6 @@ class TelegramAlgorithmsBot:
         """Run the Telegram bot."""
         self.telegram_bot.run()
 
-    def handle_lambda_event(self, event, context):
-        """Handle Lambda events."""
-        return self.telegram_bot.handle_lambda_event(event, context)
-
     def process_query(self, query: str) -> Dict[str, Any]:
         """
             Process a Telegram message query
