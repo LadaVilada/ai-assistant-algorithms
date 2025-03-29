@@ -24,6 +24,7 @@ src/ai_assistant/core/logs/*
 
 # Ignore data files
 ingested_documents.json
+src/ai_assistant/knowledge/books/welldone
 
 # Ignore macOS system files
 .DS_Store

@@ -21,7 +21,8 @@ class VectorStore:
         self, 
         api_key: str = None,
         environment: str = None,
-        index_name: str = "algorithm-assistant",
+        # index_name: str = "algorithm-assistant",
+        index_name: str = "welldone-assistant",
         dimension: int = 1536  # Default for OpenAI embeddings
     ):
         """Initialize the Pinecone vector store.

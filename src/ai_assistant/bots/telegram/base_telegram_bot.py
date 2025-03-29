@@ -34,7 +34,6 @@ class TelegramBot:
         self.token = token
         self.bot = underlying_bot
         self.application = None
-        self.logger = LoggingConfig.get_logger(__name__)
         self.last_results = {}
         self._accumulated_text = ""
         self._raw_accumulated_text = ""
@@ -42,6 +41,10 @@ class TelegramBot:
         self._last_update_time = 0.0
         self._update_interval = 0.5  # Assuming a default update_interval
         self.speech_service = SpeechService()
+
+        # Logging configuration
+        self.logger = LoggingConfig.get_logger(__name__)
+        self.logger.info("Base Telegram bot initialized")
 
         # Initialize message parts for splitting long messages
         self._message_parts = []
@@ -115,23 +118,53 @@ class TelegramBot:
     @staticmethod
     async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /start command."""
+        # await update.message.reply_text(
+        #     "👋 Welcome! I'm your AI-powered algorithm assistant. "
+        #     "Complex problems? No worries—I'll help you break them down into simple, "
+        #     "logical steps. Whether it's data structures, coding challenges, or algorithm design, "
+        #     "let's tackle them one piece at a time. Keep coding, keep learning, and let's build something great! 🚀",
+        #     parse_mode='MarkdownV2'
+        # )
+
+        user = update.message.from_user
+        name = user.first_name or user.username or "Дорогая"
+
+        context.user_data["name"] = name
+
         await update.message.reply_text(
-            "👋 Welcome! I'm your AI-powered algorithm assistant. "
-            "Complex problems? No worries—I'll help you break them down into simple, "
-            "logical steps. Whether it's data structures, coding challenges, or algorithm design, "
-            "let's tackle them one piece at a time. Keep coding, keep learning, and let's build something great! 🚀",
-            parse_mode='MarkdownV2'
+            f"👋 *Привет, мои хорошие!*\n\n"
+            f"*{name}*, я очень рада, что ты здесь 🧡\n\n"
+            "Спрашивай всё, что касается заготовок, вкусных решений и кулинарной красоты. "
+            "Про чеснок в масле, *волшебные маринады* или тарелку как в ресторане — подскажу с радостью.\n\n"
+            "_Ну что, достаём контейнеры и наводим красоту?_ ✨",
+            parse_mode='Markdown'
         )
+
+
 
     @staticmethod
     async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /help command."""
+        # await update.message.reply_text(
+        #     "I can help you with algorithm-related questions. "
+        #     "Just ask your question, and I'll search through my knowledge base to find the answer.\n\n"
+        #     "You can send your questions as text or voice messages.\n"
+        #     "You can also use /sources to see the sources for my last answer.",
+        #     parse_mode='MarkdownV2'
+        # )
+
         await update.message.reply_text(
-            "I can help you with algorithm-related questions. "
-            "Just ask your question, and I'll search through my knowledge base to find the answer.\n\n"
-            "You can send your questions as text or voice messages.\n"
-            "You can also use /sources to see the sources for my last answer.",
-            parse_mode='MarkdownV2'
+            "🧑‍🍳 Я помогу тебе с вопросами по заготовкам, рецептам, красивой сервировке и заморозке. "
+            "Просто задай свой вопрос — текстом или голосом.\n\n"
+            "Примеры:\n"
+            "• Как правильно замораживать брокколи?\n"
+            "• Что приготовить на 3 дня из курицы?\n"
+            "• Рецепт базиликового масла\n"
+            "• Как красиво выложить овощи на тарелке?\n\n"
+            "Я рядом, чтобы подсказывать тебе так, как подсказываю своим девчонкам на курсе WellDone. \n\n"
+            "Будет вкусно, красиво и легко, обещаю 💛 \n\n"
+            "_Если хочешь увидеть, откуда взят ответ — напиши /sources._",
+            parse_mode='Markdown'
         )
 
     async def handle_voice_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -335,6 +368,7 @@ class TelegramBot:
 
                     # Send the first part of the message
                     first_part = self._accumulated_text[:MAX_MESSAGE_LENGTH]
+                    self.logger.info(f"📤 Sending message:\n{self._accumulated_text[:300]}")
                     self._current_message = await context.bot.send_message(
                         chat_id=chat_id,
                         text=first_part,

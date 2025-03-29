@@ -214,19 +214,24 @@ class RAGService:
             source = metadata.get("source", "Unknown")
             page = metadata.get("page", "Unknown")
             section = metadata.get("section", "Unknown")
+            text = doc.get("page_content", "").strip()
 
-            context_parts.append(
-                f"[Document {i+1}] From: {source}, Page: {page}, "
-                f"Section: {section}\n{doc['metadata']['text']}\n"
-            )
+        # context_parts.append(
+        #         f"[Document {i+1}] From: {source}, Page: {page}, "
+        #         f"Section: {section}\n{doc['metadata']['text']}\n"
+        #     )
 
+        context_parts.append(
+            f"[Документ {i+1}] Источник: {source}, Стр.: {page}, Раздел: {section}\n{text}"
+        )
         return "\n\n".join(context_parts)
 
     async def query(
             self,
             query: str,
             llm_service=None,
-            top_k: int = 3
+            top_k: int = 3,
+            user_name: Optional[str] = None
         ) -> AsyncGenerator[str, None]:
         """Process a query end-to-end.
 
@@ -237,6 +242,7 @@ class RAGService:
 
         Yields:
             String chunks of the streaming response
+            :param user_name:  Name of the user to personalize the response
         """
         # Dynamic import to avoid circular imports
         if llm_service is None:
@@ -250,30 +256,69 @@ class RAGService:
             context = self.format_retrieved_context(retrieved_docs)
 
             # 3. Generate system message
+            # system_message = (
+            #     "You are an algorithm learning assistant that provides accurate, "
+            #     "educational explanations about algorithms and data structures. "
+            #     "Base your response on the provided context when possible."
+            # )
+
+            # system_message = (
+            #     "Ты — AI-ассистент школы WellDone, обучающий кулинарии по методологии Маши Шелушенко. "
+            #     "Отвечай в её стиле: тепло, вдохновляюще, на 'ты', с примерами из повседневной жизни. "
+            #     "Используй характерные фразы вроде: 'Очень советую попробовать вот так', 'Мой любимый способ', "
+            #     "'Это волшебно работает!'. Основывай свои ответы на предоставленном контексте из курса."
+            # )
+
             system_message = (
-                "You are an algorithm learning assistant that provides accurate, "
-                "educational explanations about algorithms and data structures. "
-                "Base your response on the provided context when possible."
+                "Ты — AI-ассистент школы WellDone, обученный на материалах Маши Шелушенко. "
+                "Ты говоришь от её имени: тепло, душевно, по-дружески и на 'ты'. "
+                "Ты вдохновляешь, ободряешь и объясняешь просто, но с вниманием к деталям. "
+                "Отвечай, как будто ты Маша: делись личными рекомендациями, любимыми приёмами, бытовыми примерами. "
+                "Обязательно используй фирменные фразы Маши, такие как: «Очень советую попробовать вот так», "
+                "«Мой любимый способ», «Это волшебно работает!», «Привет, мои хорошие!\".\n\n"
+
+                "Если тебе передано *имя пользователя* — обязательно обращайся к нему по имени, а не обобщённо. "
+                "Не используй «мои хорошие», если знаешь имя.\n\n"
+
+                "Ты не придумываешь информацию от себя — ты используешь только контекст, который получаешь из документов курса. "
+                "Если информации недостаточно, мягко скажи, что пока не можешь подсказать.\n\n"
+
+                "Твоя цель — сделать процесс готовки вкусным, лёгким и красивым. "
+                "Помоги пользователю почувствовать уверенность, радость и вдохновение на кухне."
             )
 
-            # Prepare messages for LLM
-            messages = [
-                {"role": "system", "content":  system_message},
-                {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {query}"}
-            ]
+            user_name = user_name or "Моя хорошая"
 
-            # 4. Generate completion
-            # prompt = f"{query}\n\nContext from reference materials:\n{context}"
-            # response = llm_service.generate_completion(
-            #     prompt=prompt,
-            #     system_message=system_message
-            # )
+            user_prompt = (
+                f"{user_name} спрашивает:\n\n"
+                f"Context:\n{context}\n\n"
+                f"Question: {query}\n\n"
+    
+                "Пожалуйста, начни ответ с тёплого вступления в стиле Маши — "
+                "фразы вроде «Достаём!», «Ну что, поехали!» или «Начнём с самого вкусного...» "
+                "задают нужное настроение. Обратись к пользователю по имени.\n\n"
+    
+                "Если в контексте есть конкретные рецепты маринадов — обязательно приведи их списком. "
+                "Каждый пункт начинается с номера и жирного названия, затем — краткое описание.\n\n"
+    
+                "Формат:\n"
+                "1. **Название.** Описание...\n"
+                "2. **Название.** Описание...\n\n"
+    
+                "Используй Markdown для форматирования. "
+                "Не добавляй отдельное приветствие — сразу переходи к содержательной части."
+            )
+
+            messages = [
+                    {"role": "system", "content":  system_message},
+                    {"role": "user","content": user_prompt}
+                    # {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {query}"}
+                ]
 
             # Get streaming response from LLM
             async for chunk in llm_service.get_streaming_response(messages):
                 yield chunk
 
-            # return response, retrieved_docs
         except Exception as e:
             self.logger.error(f"Error in streaming RAG response: {str(e)}")
             raise

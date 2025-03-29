@@ -1,18 +1,25 @@
 import argparse
 import logging
 from pathlib import Path
+from typing import Optional
 
 import sys
 from dotenv import load_dotenv
-from typing import Optional
 
-from ai_assistant.bots.algorithms.bot import AlgorithmsBot
 from ai_assistant.bots.telegram.base_telegram_bot import TelegramBot
-# Import core services and bots
-
-from ai_assistant.core import RAGService, LLMService, EmbeddingService, DependencyInjector
+from ai_assistant.bots.welldone.bot import WellDoneBot
+from ai_assistant.core import RAGService, DependencyInjector
 from ai_assistant.core.utils.document_tracker import DocumentTracker
 from ai_assistant.core.utils.logging import LoggingConfig
+
+
+# Import core services and bots
+
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+logger.info("🔍 Logging is working!")
 
 def ingest_documents(rag_service, directory_path):
     """
@@ -22,7 +29,10 @@ def ingest_documents(rag_service, directory_path):
         rag_service (RAGService): RAG service for document ingestion
         directory_path (str): Path to documents to be ingested
     """
+    global file_path
     logger = LoggingConfig.get_logger(__name__)
+    logger.info("🔍 Logging is working!" + directory_path)
+
     path = Path(directory_path)
 
     if not path.exists():
@@ -71,6 +81,8 @@ def ingest_documents(rag_service, directory_path):
 
     except Exception as e:
         logger.error(f"Error during document ingestion: {e}", exc_info=True)
+        logger.error(f"❌ Failed to ingest file: {file_path}")
+        logger.exception(e)
         raise
 
     # Log ingestion summary
@@ -95,25 +107,25 @@ class CLIApplication:
         self.vector_store = DependencyInjector.get_service('vector_store')
         self.document_loader = DependencyInjector.get_service('document')
         self.llm_service = DependencyInjector.get_service('llm')
-        
+
         # Create RAG service with dependencies
         self.rag_service = DependencyInjector.get_service('rag',
-            loader=self.document_loader,
-            embedding_generator=self.embedding_service,
-            vector_store=self.vector_store
-        )
+                                                          loader=self.document_loader,
+                                                          embedding_generator=self.embedding_service,
+                                                          vector_store=self.vector_store
+                                                          )
 
-    def interactive_mode(self, bot_type: str = 'algorithms'):
+    def interactive_mode(self, bot_type: str = 'welldone'):
         """
         Start an interactive CLI session with the specified bot
         """
         try:
             # Get services from dependency injector
             services = DependencyInjector.get_all_services()
-            
+
             # Initialize the appropriate bot
-            if bot_type == 'algorithms':
-                bot = AlgorithmsBot(services['rag'], services['llm'])
+            if bot_type == 'welldone':
+                bot = WellDoneBot(services['rag'], services['llm'])
             else:
                 self.logger.error(f"Unsupported bot type: {bot_type}")
                 return
@@ -209,14 +221,14 @@ class CLIApplication:
                               exc_info=True)
             print(f"❌ Failed to start interactive mode: {init_error}")
 
-    def run_tests(self, bot_type: str = 'algorithms'):
+    def run_tests(self, bot_type: str = 'welldone'):
         """
         Run predefined tests for a specific bot
         """
-        if bot_type == 'algorithms':
+        if bot_type == 'welldone':
             # Get services from dependency injector
             services = DependencyInjector.get_all_services()
-            bot = AlgorithmsBot(services['rag'], services['llm'])
+            bot = WellDoneBot(services['rag'], services['llm'])
             test_results = bot.run_tests()
 
             print(f"🧪 Test Results for {bot_type.capitalize()} Bot:")
@@ -238,13 +250,13 @@ class CLIApplication:
         try:
             # Get services from dependency injector
             services = DependencyInjector.get_all_services()
-            
+
             # Create algorithms bot
-            algorithms_bot = AlgorithmsBot(services['rag'], services['llm'])
-            
+            welldone_bot = WellDoneBot(services['rag'], services['llm'])
+
             # Create Telegram bot with algorithms bot
-            telegram_bot = TelegramBot(token, algorithms_bot)
-            
+            telegram_bot = TelegramBot(token, welldone_bot)
+
             print("🚀 Starting Telegram Bot...")
             telegram_bot.run()
         except Exception as e:
@@ -291,9 +303,9 @@ def main():
     # Optional bot type argument
     parser.add_argument(
         '--bot',
-        choices=['algorithms'],
-        default='algorithms',
-        help='Specify the bot type (default: algorithms)'
+        choices=['welldone', 'algorithms'],
+        default='welldone',
+        help='Specify the bot type (default: welldone)'
     )
 
     # Optional Telegram bot token argument
@@ -305,6 +317,10 @@ def main():
 
     # Parse arguments
     args = parser.parse_args()
+
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+    logger.info("Parsed arguments: %s", args)
 
     # Set up logging
     log_level = getattr(logging, args.log_level)
@@ -346,5 +362,5 @@ def main():
         print(f"Fatal error: {e}")
         sys.exit(1)
 
-    if __name__ == '__main__':
-        main()
+if __name__ == '__main__':
+    main()

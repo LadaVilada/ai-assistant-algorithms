@@ -1,5 +1,5 @@
 from typing import Dict, Any, Optional
-from ai_assistant.core import RAGService, LLMService, EmbeddingService, DocumentService, VectorStore
+from ai_assistant.core import RAGService, LLMService, EmbeddingService, DocumentService, VectorStore, SpeechService
 from ai_assistant.core.utils.logging import LoggingConfig
 
 class DependencyInjector:
@@ -32,7 +32,8 @@ class DependencyInjector:
             'llm': LLMService,
             'embedding': EmbeddingService,
             'document': DocumentService,
-            'vector_store': VectorStore
+            'vector_store': VectorStore,
+            'speech': SpeechService
         }
         
         service_class = services.get(service_type)
