@@ -1,5 +1,5 @@
 """Bot implementation for algorithm-related queries."""
-from typing import Dict, Any, List, AsyncIterable, Optional
+from typing import Dict, Any, List, Optional, AsyncGenerator
 
 import time
 
@@ -101,7 +101,7 @@ class WellDoneBot(BaseBot):
                 "retrieved_count": 0
             }
 
-    async def stream_response(self, query: str) -> AsyncIterable[str]:
+    async def stream_response(self, query: str) -> AsyncGenerator[dict[str, Any | None] | Any, None]:
         """Stream a response using the RAG service.
 
         Args:
@@ -114,9 +114,18 @@ class WellDoneBot(BaseBot):
             # Get retrieved documents first (to possibly guide the LLM)
             retrieved_docs = self.rag_service.retrieve(query, top_k=3)
 
-            # Stream response from the LLM via RAG service
+            # Extract image_url from top document
+            image_url = None
+            if retrieved_docs:
+                image_url = retrieved_docs[0].get("metadata", {}).get("image_url")
+
+
+        # Stream response from the LLM via RAG service
             async for chunk in self.rag_service.query(query, self.llm_service):
                 yield chunk
+
+            # When done, yield a special marker
+            yield {"__image_url__": image_url}
         except Exception as e:
             self.logger.error(f"Error in streaming response: {str(e)}")
             raise

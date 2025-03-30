@@ -23,6 +23,7 @@ class VectorStore:
         environment: str = None,
         # index_name: str = "algorithm-assistant",
         index_name: str = "welldone-assistant",
+        namespace: str = "welldone-recipes",
         dimension: int = 1536  # Default for OpenAI embeddings
     ):
         """Initialize the Pinecone vector store.
@@ -37,6 +38,7 @@ class VectorStore:
         self.api_key = api_key or os.getenv("PINECONE_API_KEY")
         self.environment = environment or os.getenv("PINECONE_ENVIRONMENT")
         self.index_name = index_name
+        self.namespace = namespace
         self.dimension = dimension
         
         if not self.api_key or not self.environment:
@@ -124,7 +126,7 @@ class VectorStore:
             
             for i in range(0, total_vectors, batch_size):
                 batch = vectors_to_upsert[i:i + batch_size]
-                self.index.upsert(vectors=batch)
+                self.index.upsert(vectors=batch, namespace=self.namespace)
                 
             logger.info(f"Successfully stored {total_vectors} vectors in Pinecone")
             
@@ -157,7 +159,7 @@ class VectorStore:
                 top_k=top_k,
                 include_metadata=True,
                 filter=filters,
-                namespace=namespace
+                namespace=self.namespace
             )
             
             # Format results
@@ -166,6 +168,7 @@ class VectorStore:
                     "id": match["id"],
                     "score": match["score"],
                     "text": match["metadata"].get("text", ""),
+                    "image_url": match["metadata"].get("image_url"),
                     "metadata": match["metadata"]
                 }
                 for match in results["matches"]
@@ -212,7 +215,7 @@ class VectorStore:
             namespace: Optional Pinecone namespace
         """
         try:
-            self.index.delete(ids=ids, namespace=namespace)
+            self.index.delete(ids=ids, namespace=self.namespace)
             logger.info(f"Deleted {len(ids)} documents from Pinecone")
         except Exception as e:
             logger.error(f"Error deleting documents from Pinecone: {e}")
@@ -221,7 +224,8 @@ class VectorStore:
     def clear_index(self) -> None:
         """Clear all vectors from the index."""
         try:
-            self.index.delete(delete_all=True)
+            self.index.delete(delete_all=True, namespace=self.namespace)
+            logger.info(f"Cleared namespace: '{self.namespace or '[default]'}'")
             logger.info(f"Cleared all vectors from Pinecone index: {self.index_name}")
         except Exception as e:
             logger.error(f"Error clearing Pinecone index: {e}")

@@ -105,11 +105,12 @@ class RAGService:
         return f"doc_{short_hash}_{timestamp}"
 
     def ingest_document(self, file_path: str) -> bool:
-        """Ingest a document into the RAG system with batch processing."""
+        """Ingest a document into the RAG system with batch processing,
+        now adapted to handle image metadata."""
         try:
             self.logger.info(f"Starting document ingestion: {file_path}")
 
-            # 1. Load and chunk the document
+            # 1. Load and chunk the document. The loader now returns chunks that may include image metadata.
             chunks = self.loader.load_document(file_path)
             if not chunks:
                 self.logger.warning(f"No chunks extracted from document: {file_path}")
@@ -123,43 +124,48 @@ class RAGService:
             successful_chunks = 0
 
             for i in range(0, total_chunks, batch_size):
-                # Get current batch
-                batch_chunks = chunks[i:i+batch_size]
+                # Get current batch of chunks
+                batch_chunks = chunks[i:i + batch_size]
                 batch_doc_ids = []
                 batch_embeddings = {}
 
-                # Generate IDs for this batch
+                # Generate document IDs for each chunk and log image metadata if available
                 for chunk in batch_chunks:
-                    doc_id = self.generate_doc_id(chunk.page_content)
+                    # Pass chunk.metadata to incorporate additional info (like page and image data) into the ID
+                    doc_id = self.generate_doc_id(chunk.page_content, chunk.metadata)
                     chunk.metadata["doc_id"] = doc_id
                     batch_doc_ids.append(doc_id)
 
-                # Generate embeddings for the batch
+                    # Log if image metadata is present
+                    if "image_url" in chunk.metadata and chunk.metadata["image_url"]:
+                        self.logger.info(f"Chunk {doc_id} contains an image: {chunk.metadata['image_url']}")
+
+                # Prepare the texts for embedding generation
                 batch_texts = [chunk.page_content for chunk in batch_chunks]
 
                 try:
-                    # Create embeddings in a single API call
+                    # Generate embeddings for the batch in a single API call
                     response = self.embedding_generator.client.embeddings.create(
                         input=batch_texts,
                         model=self.embedding_generator.model_name
                     )
 
-                    # Map embeddings to doc_ids
+                    # Map embeddings to their corresponding document IDs
                     for j, doc_id in enumerate(batch_doc_ids):
                         batch_embeddings[doc_id] = response.data[j].embedding
 
-                    # Store batch in vector store
+                    # Store the batch in the vector store (metadata, including image_url, is preserved)
                     self.vector_store.store_documents(batch_chunks, batch_embeddings)
 
                     successful_chunks += len(batch_chunks)
                     self.logger.info(f"Progress: {successful_chunks}/{total_chunks} chunks processed")
 
                 except Exception as batch_error:
-                    self.logger.error(f"Error processing batch {i//batch_size}: {batch_error}")
+                    self.logger.error(f"Error processing batch {i // batch_size}: {batch_error}")
                     continue
 
-            self.logger.info(f"Document ingestion complete: {file_path} - Processed {successful_chunks}/{total_chunks} chunks")
-            return successful_chunks > 0
+            self.logger.info(f"Document ingestion complete: {file_path}")
+            return True
 
         except Exception as e:
             self.logger.error(f"Error ingesting document {file_path}: {e}")
@@ -214,16 +220,22 @@ class RAGService:
             source = metadata.get("source", "Unknown")
             page = metadata.get("page", "Unknown")
             section = metadata.get("section", "Unknown")
-            text = doc.get("page_content", "").strip()
+            text = doc.get("text", "")
+            # text = doc.get("page_content", "").strip()
 
         # context_parts.append(
         #         f"[Document {i+1}] From: {source}, Page: {page}, "
         #         f"Section: {section}\n{doc['metadata']['text']}\n"
         #     )
 
-        context_parts.append(
-            f"[Документ {i+1}] Источник: {source}, Стр.: {page}, Раздел: {section}\n{text}"
-        )
+            context_parts.append(
+                f"[Документ {i+1}] Источник: {source}, Стр.: {page}, Раздел: {section}\n{text}"
+            )
+
+        if not context_parts:
+            # Optionally return a default message if no documents were found.
+            return "No context available."
+
         return "\n\n".join(context_parts)
 
     async def query(

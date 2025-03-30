@@ -132,7 +132,7 @@ class TelegramBot:
         context.user_data["name"] = name
 
         await update.message.reply_text(
-            f"👋 *Привет, мои хорошие!*\n\n"
+            f"👋 *Привет, и добро пожаловать на новый поток Гастрономии!*\n\n"
             f"*{name}*, я очень рада, что ты здесь 🧡\n\n"
             "Спрашивай всё, что касается заготовок, вкусных решений и кулинарной красоты. "
             "Про чеснок в масле, *волшебные маринады* или тарелку как в ресторане — подскажу с радостью.\n\n"
@@ -269,10 +269,15 @@ class TelegramBot:
             self._last_update_time = 0.0
             self._has_formatting_error = False
             self._last_sent_text = ""
+            image_url = None
 
             # Stream the response from the underlying bot and send it incrementally
             try:
                 async for chunk in self.bot.stream_response(message_text):
+                    if isinstance(chunk, dict) and "__image_url__" in chunk:
+                        # Extract the image URL from the special marker
+                        image_url = chunk["__image_url__"]
+                        continue  # skip processing this as text
                     if chunk:  # Only process non-empty chunks
                         self._raw_accumulated_text += chunk
 
@@ -320,6 +325,23 @@ class TelegramBot:
 
                 # Finalize multi-part messages by adding part numbers if needed
                 await self._finalize_messages()
+
+                # Send image only if it was present in the original document
+                if image_url:
+                    fallback_path = "/Users/ladavilada/Desktop/Screenshot%202025-03-30%20at%204.42.53%E2%80%AFPM.png"
+                    try:
+                        if image_url.startswith("file://"):
+                            file_path = image_url[len("file://"):]
+                            with open(file_path, "rb") as photo_file:
+                                await context.bot.send_photo(chat_id=chat_id, photo=photo_file, caption="Фото блюда из документа")
+                        elif image_url.startswith("http"):
+                            await context.bot.send_photo(chat_id=chat_id, photo=image_url, caption="Фото блюда из документа")
+                    except Exception as e:
+                        self.logger.warning(f"❌ Could not send image: {e}")
+
+                # If there is an image URL in the response, send the photo.
+                # with open("/Users/ladavilada/Desktop/Screenshot 2025-03-25 at 2.29.26 PM.png", "rb") as photo_file:
+                #     await context.bot.send_photo(chat_id=chat_id, photo=photo_file, caption="Фото блюда")
 
             except Exception as e:
                 self.logger.error(f"Error during streaming response: {str(e)}")
@@ -730,4 +752,7 @@ class TelegramBot:
 
         except Exception as e:
             self.logger.error(f"Error finalizing messages: {e}")
+
+    async def _handle_error(self, context, chat_id, param):
+        pass
 
