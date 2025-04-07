@@ -10,10 +10,20 @@ Designed with a friendly, instructional voice inspired by a well-known chef, thi
 
 - ⚙️ **RAG Pipeline** — built with `LangChain`, `OpenAI`, and `Pinecone`
 - 🗂 **Multi-source ingestion** — supports PDFs, transcripts, structured text
-- 💬 **Conversational interface** — Telegram bot for real-time Q&A
+- 💬 **Conversational interface with voice input support** — Telegram bot for real-time Q&A
 - 🧵 **Chat context tracking** — using `DynamoDB` + `conversation_id`
 - ☁️ **S3-based image delivery** — PDF previews via hosted images
 - 🪝 **Modular Dependency Injection** — testable and swappable services
+
+## 🔊 Voice Support
+
+The WellDone AI Assistant supports voice input via Telegram using OpenAI’s latest gpt-4o-transcribe model for high-accuracy speech-to-text conversion.
+
+✅ What It Does:
+Accepts voice messages from users
+Transcribes audio using gpt-4o-transcribe
+Passes clean text into the RAG pipeline for context-aware answering
+Returns the response in text (and optionally TTS in future)
 
 ---
 
