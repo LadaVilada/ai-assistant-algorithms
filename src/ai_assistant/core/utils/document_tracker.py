@@ -2,7 +2,7 @@ import json
 import os
 from datetime import datetime
 
-INGESTED_DOCUMENTS_JSON = "ingested_documents.json"
+INGESTED_DOCUMENTS_JSON = "ingested_documents_welldone.json"
 
 class DocumentTracker:
     def __init__(self, tracker_file=("%s" % INGESTED_DOCUMENTS_JSON)):

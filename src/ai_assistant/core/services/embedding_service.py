@@ -1,6 +1,7 @@
 import logging
 import os
-from typing import List, Optional, Dict
+import json
+from typing import List, Optional, Dict, TypedDict
 
 from dotenv import load_dotenv
 from langchain_core.documents import Document
@@ -14,6 +15,25 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+class RecipeMetadata(TypedDict):
+    title: str
+    recipe_type: str
+    duration_total: Optional[str]
+    is_make_ahead: bool
+    difficulty: str
+    keywords: List[str]
+    image_url: Optional[str]
+
+
+DEFAULT_METADATA: RecipeMetadata = {
+    "title": "Untitled Recipe",
+    "recipe_type": "другое",
+    "duration_total": "не указано",
+    "is_make_ahead": False,
+    "difficulty": "unknown",
+    "keywords": [],
+    "image_url": ""  # Use empty string instead of None to prevent Pinecone errors
+}
 
 class EmbeddingService:
     """
@@ -30,17 +50,19 @@ class EmbeddingService:
     def __init__(
             self,
             api_key: Optional[str] = None,
-            model_name: str = "text-embedding-ada-002"
+            embedding_model: str = "text-embedding-ada-002",
+            chat_model: str = "gpt-4o-mini"
     ):
         """Initialize the embedding manager.
 
         Args:
             api_key: OpenAI API key (defaults to environment variable)
-            model_name: Name of the embedding model to use
+            embedding_model: Name of the embedding model to use
         """
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
 
-        self.model_name = model_name
+        self.embedding_model = embedding_model
+        self.chat_model = chat_model
 
         if not self.api_key:
             raise ValueError(
@@ -51,7 +73,7 @@ class EmbeddingService:
         # Initialize OpenAI client
         self.client = OpenAI()
 
-        logger.info(f"Initialized embedding manager with model: {self.model_name}")
+        logger.info(f"Initialized embedding manager with model: {self.embedding_model}")
 
     def create_embeddings(
             self,
@@ -70,7 +92,7 @@ class EmbeddingService:
 
             response = self.client.embeddings.create(
                 input=[text],
-                model=self.model_name
+                model=self.embedding_model
             )
 
             # Extract embeddings from response (new structure)
@@ -112,7 +134,7 @@ class EmbeddingService:
                 # Generate embeddings for batch
                 response = self.client.embeddings.create(
                     input=texts,
-                    model=self.model_name
+                    model=self.embedding_model
                 )
 
                 # Map embeddings to doc_ids
@@ -126,6 +148,71 @@ class EmbeddingService:
             logger.error(f"Error generating embeddings for documents: {e}")
             return embeddings_dict
 
+
+    def enrich_recipe(self, recipe_text, image_url: Optional[str] = None) -> RecipeMetadata:
+        prompt = f"""
+            Ты — помощник кулинара. Проанализируй рецепт и верни метаданные в формате JSON.
+            Если текст не содержит рецепта, но даёт советы по посуде, оборудованию, технике — тоже верни метаданные. 
+            Укажи `recipe_type: "инструмент"` и опиши ключевые слова.
+            
+            Текст рецепта:
+            
+            \"\"\"{recipe_text}\"\"\"
+            
+            Верни ответ в JSON-формате со следующими полями:
+            - title
+            - recipe_type (заготовка, соус, заморозка, основа, выпечка, десерт, горячее, салат, напиток, разное и т.д.)
+            - duration_total (если указано, в свободной форме, например: "40–45 минут")
+            - is_make_ahead (true/false)
+            - difficulty (easy / medium / hard)
+            - keywords (важные ингредиенты — список слов)
+            """
+
+        response = self.client.chat.completions.create(
+            model=self.chat_model,
+            messages=[
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.2
+        )
+
+        reply = response.choices[0].message.content
+        clean_json = self.extract_json_block(reply)
+
+        try:
+            metadata_dict = json.loads(clean_json)
+
+            def safe_get(value, default):
+                return value if value is not None else default
+
+            # Process image_url to ensure it's not None (Pinecone rejects null values)
+            processed_image_url = "" if image_url is None else image_url
+            
+            # Fallbacks for missing fields
+            return {
+                "title": safe_get(metadata_dict.get("title"), DEFAULT_METADATA["title"]),
+                "recipe_type": safe_get(metadata_dict.get("recipe_type"), DEFAULT_METADATA["recipe_type"]),
+                "duration_total": safe_get(metadata_dict.get("duration_total"), DEFAULT_METADATA["duration_total"]),
+                "is_make_ahead": safe_get(metadata_dict.get("is_make_ahead"), DEFAULT_METADATA["is_make_ahead"]),
+                "difficulty": safe_get(metadata_dict.get("difficulty"), DEFAULT_METADATA["difficulty"]),
+                "keywords": safe_get(metadata_dict.get("keywords"), DEFAULT_METADATA["keywords"]),
+                "image_url": processed_image_url  # Use empty string instead of None
+            }
+        except json.JSONDecodeError:
+            logger.warning("Ошибка разбора JSON. Ответ от модели:")
+            logger.warning(f"Сырые данные от LLM:\n{reply}")
+            return DEFAULT_METADATA
+
+    @staticmethod
+    def extract_json_block(text: str) -> str:
+        """
+        Удаляет обёртку ```json ... ``` или возвращает текст как есть.
+        """
+        import re
+        match = re.search(r"```json(.*?)```", text, re.DOTALL)
+        if match:
+            return match.group(1).strip()
+        return text.strip()
 
     @staticmethod
     def get_dimension_for_model(model_name: str) -> int:

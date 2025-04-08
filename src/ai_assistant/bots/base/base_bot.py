@@ -2,9 +2,17 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Dict, Any, AsyncGenerator, AsyncIterable
 
+from dataclasses import dataclass
+from typing import Optional
 
 # from src.ai_assistant.core.utils.dependency_injector import DependencyInjector
 
+@dataclass
+class UserContext:
+    user_id: str
+    conversation_id: str
+    user_name: Optional[str] = None
+    include_history: bool = True
 
 class BaseBot(ABC):
     def __init__(self, rag_service=None, llm_service=None):
@@ -58,7 +66,7 @@ class BaseBot(ABC):
         pass
 
     @abstractmethod
-    async def stream_response(self, query: str) -> AsyncIterable[str]:
+    async def stream_response(self, query: str, context: Optional[UserContext] = None) -> AsyncIterable[str]:
         """Stream a response for the given query.
         
         Args:

@@ -32,6 +32,7 @@ pdfminer-six = "^20240706"
 langchain-text-splitters = ">=0.3.6,<0.4.0"
 langgraph = { extras = ["sqlite"], version = "^0.3.3" }
 python-telegram-bot = "^21.11.1"
+boto3 = "^1.37.26"
 
 [tool.poetry.group.dev.dependencies]
 langchain-cli = "^0.0.35"
