@@ -62,6 +62,7 @@ class VectorStore:
             try:
                 # Connect to the index
                 self.index = pinecone.Index(self.index_name)
+                # self.index.delete(delete_all=True, namespace='welldone-recipes')
                 logger.info(f"Successfully connected to Pinecone index: {self.index_name}")
             except Exception as error: # IndexNotFoundError
                 logger.info(f"Index not found: {self.index_name}")
@@ -110,14 +111,22 @@ class VectorStore:
                     logger.warning(f"No embedding found for document {doc_id}")
                     continue
                 
-                # Prepare vector with metadata
+                # Prepare cleaned metadata
+                cleaned_metadata = {"text": doc.page_content}
+                
+                # Add other metadata fields, but sanitize null values
+                for key, value in doc.metadata.items():
+                    # Skip null values to avoid Pinecone error
+                    if value is not None:
+                        cleaned_metadata[key] = value
+                    else:
+                        logger.warning(f"Skipping null value for metadata field '{key}' in document {doc_id}")
+                
+                # Prepare vector with cleaned metadata
                 vectors_to_upsert.append((
                     doc_id,
                     embeddings[doc_id],
-                    {
-                        "text": doc.page_content,
-                        **doc.metadata
-                    }
+                    cleaned_metadata
                 ))
             
             # Upsert vectors in batches
