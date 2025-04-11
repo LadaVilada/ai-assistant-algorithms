@@ -1,0 +1,1 @@
+bucket_name = "prod-image-welldone-pinecone"
