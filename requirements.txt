@@ -136,8 +136,8 @@ coloredlogs~=15.0.1
 marshmallow~=3.26.1
 flatbuffers~=25.2.10
 
-transformers~=4.37.0
-tokenizers~=0.20.3
+#transformers~=4.37.0
+#tokenizers~=0.20.3
 chromadb==0.5.23
 
 
