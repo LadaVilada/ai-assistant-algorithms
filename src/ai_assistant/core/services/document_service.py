@@ -1,23 +1,20 @@
-import io
 import logging
 import os
 import tempfile
 import uuid
-import boto3
-from PIL import Image
-import pytesseract
-
-import fitz
 from pathlib import Path
 from typing import List, Dict, Callable, Tuple
 
+import boto3
+import fitz
 from botocore.exceptions import NoCredentialsError
-from langchain_community.document_loaders import PyPDFLoader, TextLoader
+from dotenv import load_dotenv
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-S3_BUCKET_NAME = "welldone-pinecone"
-S3_FOLDER = "pdf_images"
+
+# Load environment variables
+load_dotenv()
 
 def extract_keywords_simple(text: str, top_n=5):
     import re
@@ -29,22 +26,31 @@ def extract_keywords_simple(text: str, top_n=5):
     sorted_words = sorted(freq.items(), key=lambda x: x[1], reverse=True)
     return [w for w, _ in sorted_words[:top_n]]
 
-def upload_image_to_s3(file_path: str) -> str:
-    """Uploads image to S3 and returns its URL"""
+def upload_image_to_s3(file_path: str) -> dict:
+    """Uploads image to S3 and returns both s3:// and https:// URLs"""
+
+    S3_BUCKET_NAME = os.getenv('S3_BUCKET_NAME')
+    S3_FOLDER = os.getenv("S3_FOLDER")
+    S3_REGION = os.getenv("S3_REGION")
+
     s3_client = boto3.client("s3")
     filename = os.path.basename(file_path)
     s3_key = f"{S3_FOLDER}/{filename}" # object_name: The name of the object in S3
 
     try:
         s3_client.upload_file(file_path, S3_BUCKET_NAME, s3_key)
-        s3_url = f"https://{S3_BUCKET_NAME}.s3.amazonaws.com/{s3_key}"
-        return s3_url
+
+        return {
+            "s3_uri": f"s3://{S3_BUCKET_NAME}/{s3_key}",
+            "http_url": f"https://{S3_BUCKET_NAME}.s3.{S3_REGION}.amazonaws.com/{s3_key}"
+        }
+
     except NoCredentialsError:
         logging.error("AWS credentials not found for S3 upload.")
-        return ""
+        return {}
     except Exception as e:
         logging.error(f"Failed to upload {file_path} to S3: {e}")
-        return ""
+        return {}
 
 class DocumentService:
     """
@@ -121,7 +127,12 @@ class DocumentService:
                         image_path = os.path.join(output_dir, image_filename)
                         with open(image_path, "wb") as img_file:
                             img_file.write(image_bytes)
-                        image_url = upload_image_to_s3(image_path) # Upload to S3
+                        # Upload image to S3
+                        image_info = upload_image_to_s3(image_path)
+                        if image_info:
+                            s3_uri = image_info["s3_uri"]
+                            # public_url = image_info["http_url"]
+                            image_url = s3_uri
                         logging.info(f"Extracted image from page {page_num+1}: {image_url}")
 
                     # Create a Document with metadata including image_url if found

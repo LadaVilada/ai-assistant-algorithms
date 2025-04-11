@@ -120,7 +120,7 @@ class WellDoneBot(BaseBot):
                 image_url = retrieved_docs[0].get("metadata", {}).get("image_url")
 
 
-        # Stream response from the LLM via RAG service
+            # Stream response from the LLM via RAG service
             async for chunk in self.rag_service.query(query, self.llm_service):
                 yield chunk
 

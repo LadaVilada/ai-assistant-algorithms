@@ -118,13 +118,6 @@ class TelegramBot:
     @staticmethod
     async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /start command."""
-        # await update.message.reply_text(
-        #     "👋 Welcome! I'm your AI-powered algorithm assistant. "
-        #     "Complex problems? No worries—I'll help you break them down into simple, "
-        #     "logical steps. Whether it's data structures, coding challenges, or algorithm design, "
-        #     "let's tackle them one piece at a time. Keep coding, keep learning, and let's build something great! 🚀",
-        #     parse_mode='MarkdownV2'
-        # )
 
         user = update.message.from_user
         name = user.first_name or user.username or "Дорогая"
@@ -145,13 +138,6 @@ class TelegramBot:
     @staticmethod
     async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /help command."""
-        # await update.message.reply_text(
-        #     "I can help you with algorithm-related questions. "
-        #     "Just ask your question, and I'll search through my knowledge base to find the answer.\n\n"
-        #     "You can send your questions as text or voice messages.\n"
-        #     "You can also use /sources to see the sources for my last answer.",
-        #     parse_mode='MarkdownV2'
-        # )
 
         await update.message.reply_text(
             "🧑‍🍳 Я помогу тебе с вопросами по заготовкам, рецептам, красивой сервировке и заморозке. "
@@ -277,13 +263,16 @@ class TelegramBot:
                     if isinstance(chunk, dict) and "__image_url__" in chunk:
                         # Extract the image URL from the special marker
                         image_url = chunk["__image_url__"]
+                        self.logger.warning(f"Image URL found in chunk! {image_url}")
                         continue  # skip processing this as text
                     if chunk:  # Only process non-empty chunks
                         self._raw_accumulated_text += chunk
+                        self.logger.warning(f"Processing non empty chunk, errors update! {self._has_formatting_error}")
 
                         # Apply Markdown formatting if no formatting errors have occurred
                         if not self._has_formatting_error:
                             try:
+                                self.logger.warning(f"Formatting error encountered, using _format_for_markdown")
                                 self._accumulated_text = self._format_for_markdown(self._raw_accumulated_text)
                             except Exception as e:
                                 # On formatting error, switch to escaping text (no rich formatting)
@@ -292,6 +281,7 @@ class TelegramBot:
                                 self._accumulated_text = self.escape_markdown(self._raw_accumulated_text)
                         else:
                             # If a formatting error was encountered, use escaped raw text for updates
+                            self.logger.error(f"Formatting error encountered, using raw text")
                             self._accumulated_text = self.escape_markdown(self._raw_accumulated_text)
 
                         # Update the message in Telegram (with rate limiting)
@@ -326,22 +316,35 @@ class TelegramBot:
                 # Finalize multi-part messages by adding part numbers if needed
                 await self._finalize_messages()
 
+                def generate_pre_signed_url(s3_uri: str, expiration: int = 3600) -> str:
+                    import boto3
+                    from botocore.exceptions import ClientError
+                    from urllib.parse import quote
+
+                    s3 = boto3.client("s3")
+
+                    try:
+                        bucket, key = s3_uri.replace("s3://", "").split("/", 1)
+                        return s3.generate_presigned_url(
+                            "get_object",
+                            Params={"Bucket": bucket, "Key": key},
+                            ExpiresIn=expiration
+                        )
+                    except ClientError as e:
+                        self.logger.error(f"Error generating presigned URL for {s3_uri}: {e}")
+                        return ""
+
+
                 # Send image only if it was present in the original document
                 if image_url:
-                    fallback_path = "/Users/ladavilada/Desktop/Screenshot%202025-03-30%20at%204.42.53%E2%80%AFPM.png"
                     try:
-                        if image_url.startswith("file://"):
-                            file_path = image_url[len("file://"):]
-                            with open(file_path, "rb") as photo_file:
-                                await context.bot.send_photo(chat_id=chat_id, photo=photo_file, caption="Фото блюда из документа")
-                        elif image_url.startswith("http"):
-                            await context.bot.send_photo(chat_id=chat_id, photo=image_url, caption="Фото блюда из документа")
+                        if image_url.startswith("s3://"):
+                            image_url = generate_pre_signed_url(image_url)
+                            await context.bot.send_photo(chat_id=chat_id,
+                                                         photo=image_url,
+                                                         caption="Фото блюда из документа")
                     except Exception as e:
                         self.logger.warning(f"❌ Could not send image: {e}")
-
-                # If there is an image URL in the response, send the photo.
-                # with open("/Users/ladavilada/Desktop/Screenshot 2025-03-25 at 2.29.26 PM.png", "rb") as photo_file:
-                #     await context.bot.send_photo(chat_id=chat_id, photo=photo_file, caption="Фото блюда")
 
             except Exception as e:
                 self.logger.error(f"Error during streaming response: {str(e)}")

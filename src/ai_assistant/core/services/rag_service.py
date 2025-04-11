@@ -229,20 +229,20 @@ class RAGService:
 
         query_embedding = self.embedding_generator.create_embeddings(embedding_query)
         keywords = extract_keywords_simple(query)
-        # query_embedding = self.embedding_generator.create_embeddings(query)
+        # before it was: query_embedding = self.embedding_generator.create_embeddings(query)
 
-        print(type(self.vector_store))
+        self.logger.debug(keywords)
+        self.logger.debug(type(self.vector_store))
         index_stats = self.vector_store.index.describe_index_stats()
-        print(index_stats)  # See what the response contains
+        self.logger.debug(index_stats)  # See what the response contains
 
         # Extract the number of stored vectors (documents)
         num_vectors = index_stats["total_vector_count"]
-        print(f"Total vectors in Pinecone: {num_vectors}")
+        self.logger.debug(f"Total vectors in Pinecone: {num_vectors}")
 
 
         # 2. Retrieve relevant document chunks
         filters = {"keywords": {"$in": keywords}} if keywords else None
-
 
         retrieved_chunks = self.vector_store.retrieve_documents(
             query_vector=query_embedding,
@@ -251,7 +251,7 @@ class RAGService:
             # filters=filter_dict
         )
 
-        self.logger.debug(f"Retrieved {len(retrieved_chunks)} chunks for query.")
+        self.logger.debug(f"w {len(retrieved_chunks)} chunks for query.")
         self.logger.debug(f"Query: {query}, Embedding: {query_embedding}, Filters: {filters}")
 
         return retrieved_chunks
@@ -361,6 +361,8 @@ class RAGService:
                     conversation_id=conversation_id,
                     content=query
                 )
+                self.logger.info(f"Record user message in conversation {conversation_id} for user {user_id}")
+
             
             # 1. Retrieve relevant documents
             retrieved_docs = self.retrieve(query, top_k=top_k)
@@ -379,11 +381,11 @@ class RAGService:
                 
                 # Format conversation history as context
                 if history:
-                    conversation_messages = []
-                    for msg in history:
-                        role_prefix = "User: " if msg["role"] == "user" else "Assistant: "
-                        conversation_messages.append(f"{role_prefix}{msg['content']}")
-                    
+
+                    def flatten_history(messages: List[Dict[str, str]]) -> str:
+                        return "\n".join(f"{msg['role']}: {msg['content']}" for msg in messages)
+
+                    conversation_messages = flatten_history(history)
                     conversation_context = "Recent conversation:\n" + "\n".join(conversation_messages)
             
             # 4. Prepare prompts with both document and conversation context
@@ -426,60 +428,93 @@ class RAGService:
         user_name: str = "Пользователь", 
         conversation_context: Optional[str] = None
     ) -> dict:
-            """
-            Формирует system и user prompt для RAG-бота WellDone
-            Возвращает словарь с system_message и user_message
-            
-            Args:
-                query: User query
-                context: Document context from retrieval
-                user_name: Name of the user
-                conversation_context: Optional conversation history context
-            """
+        """
+        Формирует system и user prompt для RAG-бота WellDone
+        Возвращает словарь с system_message и user_message
 
-            system_message = RAGService.get_system_message()
+        Args:
+            query: User query
+            context: Document context from retrieval
+            user_name: Name of the user
+            conversation_context: Optional conversation history context
+        """
 
-            user_prompt_template = (
-                "Найди и опиши рецепт по запросу: \"{query}\"\n\n"
-                "Если в документах найдены:\n"
-                "- ингредиенты — выдели их\n"
-                "- шаги приготовления — оформи по пунктам\n"
-                "- советы, ссылки, заготовки — тоже включи, если есть\n"
-            )
-            
-            # Include conversation history if available
-            conversation_section = ""
-            if conversation_context:
-                conversation_section = f"Предыдущая часть разговора:\n{conversation_context}\n\n"
+        system_message = RAGService.get_system_message()
 
-            formatted_user_prompt = (
-                f"{user_name} спрашивает:\n\n"
-                f"{conversation_section}"
-                f"Context:\n{context}\n\n"
-                f"{user_prompt_template.format(query=query)}"
-            )
+        # Include conversation history if available
+        conversation_section = ""
+        if conversation_context:
+            conversation_section = f"Предыдущая часть разговора:\n{conversation_context}\n\n"
 
-            return {
-                "system_message": system_message,
-                "user_message": formatted_user_prompt
-            }
+        user_prompt_template = RAGService.get_user_prompt(query, conversation_context)
+
+        formatted_user_prompt = RAGService.get_fromatted_prompt(context, conversation_section, query, user_name,
+                                                                user_prompt_template)
+
+        return {
+            "system_message": system_message,
+            "user_message": formatted_user_prompt
+        }
+
+    @staticmethod
+    def get_fromatted_prompt(context, conversation_section, query, user_name, user_prompt_template):
+        formatted_user_prompt = (
+            f"{user_name} спрашивает:\n\n"
+            f"{conversation_section}"
+            f"Context:\n{context}\n\n"
+            f"{user_prompt_template.format(query=query)}"
+        )
+        return formatted_user_prompt
+
+    @staticmethod
+    def get_user_prompt(query, conversation_context):
+        user_prompt_template = (
+            "Вот кулинарный вопрос от ученика школы WellDone:\n"
+            "\"{query}\"\n\n"
+            "Вот что уже обсуждалось ранее:\n"
+            "{conversation_context}\n\n"
+            "Продолжай разговор с учётом выше сказанного.\n"
+            "Если речь идёт о рецепте, фото или документе, о котором ты уже говорил "
+            "— не переспрашивай, просто уточни и покажи.\n\n"
+            "Найди и опиши информацию из материалов Маши Шелушенко.\n"
+            "Это может быть рецепт, совет, меню или подход к заготовкам.\n\n"
+            "Если в документах найдены:\n"
+            "- ингредиенты — выдели их\n"
+            "- шаги приготовления — оформи по пунктам\n"
+            "- лайфхаки, советы по хранению, заморозке или заготовкам — добавь обязательно\n"
+            "- меню или примеры использования заготовок — включи, если это запрашивается или уточни об этом сам\n"
+            "- _ссылки на другие материалы или фотографии_ — упомяни, что можешь их показать\n\n"
+            "Отвечай как заботливый ассистент, вдохновляющий и поддерживающий, "
+            "в стиле Маши Шелушенко: говори на 'ты', чётко, тепло и с верой в успех 💚.\n\n"
+        )
+
+        return user_prompt_template.format(query=query, conversation_context=conversation_context)
 
     @staticmethod
     def get_system_message():
         system_message = (
             "Ты — заботливый кулинарный ассистент школы WellDone.\n"
-            "Твоя задача — помогать готовить вкусно, просто и уверенно,\n"
-            "используя рецепты из материалов Маши Шелушенко.\n\n"
+            "Обученный по уникальной методике шефа по имени Маша Шелушенко.\n"
+            "Твоя задача — помогать готовить вкусно, просто и уверенно, используя рецепты из материалов.\n"
+            "Будь то рецепт или совет по приготовлению, заморозке, заготовкам на неделю/месяц вперёд.\n\n"
+            "Base your answer PRIMARILY on the retrieved content. Only use general knowledge for minor clarifications\n\n"
             "Отвечай как Маша:\n"
-            "— на 'ты'\n"
-            "— дружелюбно и с верой в успех\n"
-            "— чётко: выделяй ингредиенты и шаги\n"
-            "— добавляй совет или лайфхак, если он есть в документе\n"
-            "— если есть фото — скажи, что его сейчас покажешь\n"
-            "— учитывай предыдущую часть разговора, если она есть\n"
-            "Если в документах нет советов, можешь добавить универсальный кулинарный совет или напоминание — "
-            "в духе Маши Шелушенко. Говори на 'ты', поддерживай и вдохновляй."
-            "Иногда заверши ответ короткой тёплой фразой или смайликом (например: «Удачи на кухне!» или «Я верю в тебя!»). "
-            "Но не всегда — делай это по настроению.\n"
+            " — на 'ты'\n"
+            " — дружелюбно и с верой в успех\n"
+            " — чётко: **выделяй ингредиенты и шаги**\n"
+            " — _добавляй совет или лайфхак, если он есть в документе_\n"
+            " — если в документе, на основе которого ты подготовил ответ, есть фото — скажи, что его сейчас покажешь\n"
+            " — учитывай предыдущую часть разговора, если она есть\n\n"
+            "Если в документах нет советов, можешь добавить универсальный кулинарный совет или напоминание — в духе Маши Шелушенко.\n"
+            "Говори на 'ты', поддерживай и вдохновляй. Приготовление еды и заготовок на месяц — это творчество, позволь себе экспериментировать.\n"
+            "Иногда завершай ответ короткой тёплой фразой или смайликом (например: «Удачи на кухне!» или «Я верю в тебя!»). Но не всегда — делай это по настроению.\n\n"
+            "Пример вопросов, которые могут задать студенты на курсе:\n"
+            "— Набросай мне примерное меню/блюда из куриных заготовок?\n"
+            "— Какие куриные заготовки можно сделать из четырёх куриц?\n"
+            "— Как правильно замариновать и заморозить стейк лосося?\n"
+            "— Сколько можно хранить заготовки?\n"
+            "— Напомни рецепт фирменного борща Шелуши?\n"
+            "— Что такое букет Гарни?\n"
         )
+
         return system_message

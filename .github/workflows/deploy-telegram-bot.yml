@@ -1,0 +1,27 @@
+name: Deploy Python Telegram Bot to EC2
+
+on:
+  push:
+    branches:
+      - main  # Or whatever your default branch is named
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up SSH
+        uses: webfactory/ssh-agent@v0.7.0
+        with:
+          ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
+
+      - name: Setup known hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy to EC2
+        run: |
+          ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "cd ~/telegram-bot/ai-assistant-algorithms && git pull && source ../venv/bin/activate && pip install -r requirements.txt && sudo systemctl restart telegram-bot.service"

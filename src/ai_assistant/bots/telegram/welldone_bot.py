@@ -55,7 +55,7 @@ class TelegramWellDoneBot:
         # Initialize services
         services = initialize_services()
 
-        # Create the underlying algorithms bot
+        # Create the underlying welldone bot
         self.welldone_bot = WellDoneBot(services['rag'], services['llm'])
 
         # Create the Telegram bot wrapper
