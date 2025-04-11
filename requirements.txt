@@ -26,9 +26,12 @@ pymongo==4.5.0
 debugpy~=1.8.13
 fitz~=0.0.1.dev2
 pathlib~=1.0.1
-boto3~=1.37.26
+
+boto3~=1.34.90
+botocore~=1.34.90
+urllib3~=2.3.0
+
 pillow~=11.1.0
-botocore~=1.37.26
 pip~=24.0
 configparser~=7.2.0
 attrs~=25.3.0
@@ -78,7 +81,6 @@ sympy~=1.13.1
 pydot~=3.0.4
 onnxruntime~=1.19.0
 tqdm~=4.67.1
-urllib3~=2.3.0
 fsspec~=2025.3.0
 typer~=0.15.2
 shellingham~=1.5.4
