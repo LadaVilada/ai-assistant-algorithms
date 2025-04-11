@@ -8,8 +8,6 @@ python-dotenv>=1.0.1,<2.0.0
 pypdf>=5.3.1,<6.0.0
 tiktoken>=0.7.0,<0.8.0
 pinecone-client>=3.0.0,<4.0.0
-chromadb==0.5.23
-#chroma-hnswlib==0.7.5
 beautifulsoup4>=4.12.2,<4.13.0
 firecrawl-py>=0.0.13,<0.1.0
 tavily-python>=0.3.3,<0.4.0
@@ -133,12 +131,16 @@ websocket-client~=1.8.0
 wrapt~=1.17.2
 durationpy~=0.9
 requests-oauthlib~=2.0.0
-tokenizers~=0.20.3
 humanfriendly~=10.0
 coloredlogs~=15.0.1
 marshmallow~=3.26.1
 flatbuffers~=25.2.10
-transformers~=4.49.0
+
+transformers~=4.37.0
+tokenizers~=0.20.3
+chromadb==0.5.23
+
+
 safetensors~=0.5.3
 jsonpointer~=3.0.0
 huggingface-hub~=0.29.3
