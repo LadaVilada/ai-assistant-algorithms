@@ -17,6 +17,24 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
 
+      - name: Debug SSH key presence
+        run: |
+          if [ -z "${{ secrets.EC2_SSH_KEY }}" ]; then
+            echo "❌ SSH key is empty or not loaded"
+            exit 1
+          else
+            echo "✅ SSH key appears to be set"
+          fi   
+
+      - name: Debug EC2_HOST key presence
+        run: |
+          if [ -z "${{ secrets.EC2_HOST }}" ]; then
+            echo "❌ EC2_HOST key is empty or not loaded"
+            exit 1
+          else
+            echo "✅ EC2_HOST key appears to be set"
+          fi       
+
       - name: Setup known hosts
         run: |
           mkdir -p ~/.ssh
