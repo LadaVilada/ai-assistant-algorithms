@@ -1,5 +1,6 @@
 """Bot implementation for algorithm-related queries."""
 from typing import Dict, Any, List, Optional, AsyncGenerator
+from typing import Union
 
 import time
 
@@ -101,7 +102,7 @@ class WellDoneBot(BaseBot):
                 "retrieved_count": 0
             }
 
-    async def stream_response(self, query: str) -> AsyncGenerator[dict[str, Any | None] | Any, None]:
+    async def stream_response(self, query: str) -> AsyncGenerator[Union[dict[str, Union[Any, None]], Any], None]:
         """Stream a response using the RAG service.
 
         Args:
