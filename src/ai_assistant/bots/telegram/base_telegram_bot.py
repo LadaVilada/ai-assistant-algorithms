@@ -267,21 +267,21 @@ class TelegramBot:
                         continue  # skip processing this as text
                     if chunk:  # Only process non-empty chunks
                         self._raw_accumulated_text += chunk
-                        self.logger.warning(f"Processing non empty chunk, errors update! {self._has_formatting_error}")
+                        # self.logger.warning(f"Processing non empty chunk, errors update! {self._has_formatting_error}")
 
                         # Apply Markdown formatting if no formatting errors have occurred
                         if not self._has_formatting_error:
                             try:
-                                self.logger.warning(f"Formatting error encountered, using _format_for_markdown")
+                                # self.logger.warning(f"Formatting error encountered, using _format_for_markdown")
                                 self._accumulated_text = self._format_for_markdown(self._raw_accumulated_text)
                             except Exception as e:
                                 # On formatting error, switch to escaping text (no rich formatting)
-                                self.logger.error(f"Markdown formatting error: {e}")
+                                # self.logger.error(f"Markdown formatting error: {e}")
                                 self._has_formatting_error = True
                                 self._accumulated_text = self.escape_markdown(self._raw_accumulated_text)
                         else:
                             # If a formatting error was encountered, use escaped raw text for updates
-                            self.logger.error(f"Formatting error encountered, using raw text")
+                            # self.logger.error(f"Formatting error encountered, using raw text")
                             self._accumulated_text = self.escape_markdown(self._raw_accumulated_text)
 
                         # Update the message in Telegram (with rate limiting)

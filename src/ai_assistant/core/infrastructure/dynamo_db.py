@@ -119,7 +119,8 @@ class DynamoDBClient:
             The created message item
         """
         timestamp = int(time.time() * 1000)  # Current time in milliseconds
-        
+        print("inside add_message")
+
         # Create message item
         item = {
             'conversation_id': conversation_id,

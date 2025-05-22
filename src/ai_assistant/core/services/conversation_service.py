@@ -73,6 +73,8 @@ class ConversationService:
             The created message item
         """
         try:
+            self.logger.info(f"Calling add_message for {conversation_id}")
+
             message = self.db_client.add_message(
                 conversation_id=conversation_id,
                 role="user",
