@@ -166,6 +166,9 @@ class TelegramBot:
             user_id = str(message.from_user.id)
             username = message.from_user.username or "Anonymous"
 
+            if await self._reject_if_unauthorized(user_id, chat_id, context):
+                return
+
             # Log incoming voice message details
             self.logger.info(f"Received voice message from {username} (ID: {user_id})")
             self.logger.info(f"Voice message details: duration={message.voice.duration}, file_size={message.voice.file_size}")
@@ -241,6 +244,9 @@ class TelegramBot:
             chat_id = message.chat_id
             user_id = str(message.from_user.id)
             username = message.from_user.username or "Anonymous"
+
+            if await self._reject_if_unauthorized(user_id, chat_id, context):
+                return
 
             # Log incoming message
             self.logger.info(f"Received message from {username} (ID: {user_id}): {message_text}")
@@ -603,6 +609,18 @@ class TelegramBot:
                     )
                 except Exception as e2:
                     self.logger.error(f"Error sending plain code block: {str(e2)}")
+
+    async def _reject_if_unauthorized(self, user_id: str, chat_id: int, context: ContextTypes.DEFAULT_TYPE) -> bool:
+        """Reject the user if they are not in the allowed list."""
+        ALLOWED_USERS = {"722433100"}  # Move to config if needed
+        if user_id not in ALLOWED_USERS:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text="❌ Извини, этот бот доступен только участникам курса.",
+            )
+            return True
+        return False
+
 
     @staticmethod
     def _escape_html(text):

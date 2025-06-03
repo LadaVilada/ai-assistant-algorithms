@@ -104,6 +104,13 @@ poetry run pytest
 python src/ai_assistant/cli/welldone_main.py telegram  --token YOUR_TELEGRAM_TOKEN
 ```
 
+injest documents if needed
+
+```bash         
+python src/ai_assistant/cli/welldone_main.py telegram --ingest src/ai_assistant/knowledge/books/welldone --token <YOUR_TELEGRAM_TOKEN>
+```
+
+
 ### 6. 🧪 Example Usage (challenging question)
 
 ```bash
